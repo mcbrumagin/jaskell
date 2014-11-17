@@ -83,16 +83,17 @@ var html = {
                 return o
             }
             if (elem) return each(elem, add)
-			else return function (elem) {
-				return each(elem, add)
-			}
+            else return function (elem) {
+                return each(elem, add)
+            }
         },
         remove: function (val, elem) {
             var rem = function (o) {
                 var classes = o.className.split(' ')
                 var resultClasses = []
                 for (var i = 0; i < classes.length; i++) {
-                    if (classes[i] != val && classes[i] != '') resultClasses.push(classes[i])
+                    if (classes[i] != val && classes[i] != '')
+                        resultClasses.push(classes[i])
                 }
                 o.className = resultClasses.join(' ')
                 return o
@@ -149,6 +150,46 @@ var html = {
             }
         }
     },
+    request: {
+        create: function (method, url, headers, async) {
+            return function sender(data, callback) {
+                var req = new XMLHttpRequest()
+                var done = function () {
+                    callback(req.responseText, req.status)
+                }
+                req.onload = done
+                req.open(method, url, async)
+                for (var prop in headers) {
+                    req.setRequestHeader(prop, headers[prop])
+                }
+                req.send(JSON.stringify(data))
+            }
+        },
+        send: function (data, callback, request) {
+            if (isFunction(data)) {
+                callback = data
+                data = undefined
+            }
+            if (request) return request(data, callback)
+            else return function (req) {
+                console.log(req,data,callback)
+                return req(data, callback)
+            }
+        },
+        get: function () {
+            var args = ['get'].concat(toArray(arguments))
+            html.request.send.apply(this, args)
+        },
+        post: function (url, async, data, callback) {
+            html.request.send('post', url, async, data, callback)
+        },
+        put: function (url, async, data, callback) {
+            html.request.send('put', url, async, data, callback)
+        },
+        delete: function (url, async, data, callback) {
+            html.request.send('delete', url, async, data, callback)
+        }
+    },
     log: function (message, elem) {
         var log = function (elem) {
             console.log(message, elem)
@@ -165,6 +206,7 @@ var using = function (nameSpace, operations) {
 
 
 using(html, function operations(_) {
+
     var iterator = 0;
     _.event.create('test', true, true, function () {
         return {date: new Date(), iteration: iterator++}
@@ -177,10 +219,10 @@ using(html, function operations(_) {
         _.append('2'),
         _.append('3'),
         _.class.add('neat'),
-        _.class.remove('test0'))
+        _.class.remove('test0')
+    )
 
     _.class.remove('thing', _.select.class('test1'))
-    //_.class.remove('test2', _.select.class('test2'))
 
     sequence(
         _.select.class('neat'),
@@ -188,19 +230,19 @@ using(html, function operations(_) {
         _.class.add('  woah     dude  '),
         _.event.capture('click', function (event) {
             event.preventDefault()
-            using(event.currentTarget,
-                sequence(
-                    _.append('..'),
-                    _.append('?'),
-                    _.log('appending')
-                ))
+            using(event.currentTarget, sequence(
+                _.append('..'),
+                _.append('?'),
+                _.log('appending')
+            ))
         }),
         _.append('...'),
         _.select.class('test5'),
         _.append('???'),
         _.event.capture('click', function () {
             _.event.trigger('test', document.body)
-        }))
+        })
+    )
 
     _.event.capture('test', function (event) {
         console.log(event.detail)
@@ -213,9 +255,53 @@ using(html, function operations(_) {
             event.preventDefault()
             alert('neat')
             append123('test0')
-        }))
+        })
+    )
 
-});
+    sequence(
+        (function (a,b) {
+            return function () {
+                return function () { return a + b }
+            }
+        })(10,20),
+        (function(a,b) {
+            return function (ab) {
+                var result = a + b + ab()
+                console.log('test result is',result)
+                return result
+            }
+        })(10,20)
+    )()
+
+    /*_.request.get({}, '/sandbox/test', {test:'test'}, function (res) {
+        console.log(res.slice(0, 50).concat('...'))
+    })*/
+
+    /*_.request.post({"Content-Type": "application/json"},'/sandbox/log', {test:'test'}, function (res, status) {
+        console.log('Result:', status)
+    })*/
+
+    /*_.request.send({test:'test'}, function(response, status) {
+        console.log('Result is', response, 'with status', status)
+    }, _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}))
+    */
+
+    /*sequence(
+        _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}),
+        _.request.send({test:'test'}, function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        })
+    )()*/
+
+    /*
+    var netLog = _.request.create('post','/sandbox/log',{"Content-Type": "application/json"})
+    var sender = _.request.send({test:'test'}, function(response, status) {
+        console.log('Result is', response, 'with status', status)
+    })
+
+    sequence(netLog, sender)()
+    */
+})
 
 /*
  //jQuery euivalent
