@@ -151,43 +151,70 @@ var html = {
         }
     },
     request: {
-        create: function (method, url, headers, async) {
-            return function sender(data, callback) {
+        create: function (method, url, headers, callback) {
+            var defaultHeaders = {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+            }
+            if (isFunction(headers)) {
+                callback = headers
+                headers = defaultHeaders
+            }
+            return function sender(data) {
                 var req = new XMLHttpRequest()
-                var done = function () {
+                req.onload = function () {
                     callback(req.responseText, req.status)
                 }
-                req.onload = done
-                req.open(method, url, async)
+                req.open(method, url, true)
                 for (var prop in headers) {
                     req.setRequestHeader(prop, headers[prop])
                 }
-                req.send(JSON.stringify(data))
-            }
-        },
-        send: function (data, callback, request) {
-            if (isFunction(data)) {
-                callback = data
-                data = undefined
-            }
-            if (request) return request(data, callback)
-            else return function (req) {
-                console.log(req,data,callback)
-                return req(data, callback)
+                req.send(data)
             }
         },
         get: function () {
             var args = ['get'].concat(toArray(arguments))
-            html.request.send.apply(this, args)
+            return html.request.create.apply(this, args)
         },
-        post: function (url, async, data, callback) {
-            html.request.send('post', url, async, data, callback)
+        post: function () {
+            var args = ['post'].concat(toArray(arguments))
+            return html.request.create.apply(this, args)
         },
-        put: function (url, async, data, callback) {
-            html.request.send('put', url, async, data, callback)
+        put: function () {
+            var args = ['put'].concat(toArray(arguments))
+            return html.request.create.apply(this, args)
         },
-        delete: function (url, async, data, callback) {
-            html.request.send('delete', url, async, data, callback)
+        delete: function () {
+            var args = ['delete'].concat(toArray(arguments))
+            return html.request.create.apply(this, args)
+        },
+        json: {
+            create: function (method, url, callback) {
+                return function sender(data) {
+                    var req = new XMLHttpRequest()
+                    req.onload = function () {
+                        callback(req.responseText, req.status)
+                    }
+                    req.open(method, url, true)
+                    req.setRequestHeader("Content-Type", "application/json")
+                    req.send(JSON.stringify(data))
+                }
+            },
+            get: function () {
+                var args = ['get'].concat(toArray(arguments))
+                return html.request.json.create.apply(this, args)
+            },
+            post: function () {
+                var args = ['post'].concat(toArray(arguments))
+                return html.request.json.create.apply(this, args)
+            },
+            put: function () {
+                var args = ['put'].concat(toArray(arguments))
+                return html.request.json.create.apply(this, args)
+            },
+            delete: function () {
+                var args = ['delete'].concat(toArray(arguments))
+                return html.request.json.create.apply(this, args)
+            }
         }
     },
     log: function (message, elem) {
@@ -286,12 +313,28 @@ using(html, function operations(_) {
     }, _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}))
     */
 
-    /*sequence(
-        _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}),
-        _.request.send({test:'test'}, function(response, status) {
+    // All are equivalent
+    _.request.create(
+        'post', '/sandbox/log', {
+            "Content-Type": "application/json"
+        }, function(response, status) {
             console.log('Result is', response, 'with status', status)
-        })
-    )()*/
+        })(JSON.stringify({test:'test1'}))
+
+    _.request.post('/sandbox/log', {
+            "Content-Type": "application/json"
+        }, function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        })(JSON.stringify({test:'test2'}))
+
+    _.request.json.create(
+        'post', '/sandbox/log', function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        })({test:'test3'})
+
+    _.request.json.post('/sandbox/log', function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        })({test:'test4'})
 
     /*
     var netLog = _.request.create('post','/sandbox/log',{"Content-Type": "application/json"})
