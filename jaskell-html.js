@@ -1,20 +1,49 @@
-var len = function (obj) {
-    return obj ? obj.length : -1
+// TODO: Wrap in jaskell function
+//   refactor to use private methods (should cut 25-50% of code)
+// TODO: Import other jaskell functions
+//   refactor to have core jaskell script and jaskell-html separately
+
+
+ //---------------------------------------------------------------------------
+// Core Jaskell Functions -----------------------------------------------------
+
+Function.prototype.curry = function () {
+    var f = this
+    var a = toArray(arguments)
+    return function curried() {
+        return f.apply(this, a.concat(toArray(arguments)))
+    }
 }
 
-function isFunction(f) {
-    return {}.toString.call(f) === '[object Function]'
+var isFunction = function (obj) {
+    return {}.toString.call(obj) === '[object Function]'
 }
 
 var toArray = function (args) {
     return Array.prototype.slice.call(args)
 }
 
-var sequence = function () {
+var each = function (objs, fn) {
+    if (objs.length) {
+        var results = []
+        for (var i = 0; i < objs.length; i++) {
+            results.push(fn(objs[i]))
+        }
+        return results
+    } else return fn(objs)
+}
+
+var using = function (/* ...names, operation */) {
+    var args = toArray(arguments)
+    var ind = args.length - 1
+    var names = args.slice(0, ind)
+    var operation = args[ind]
+    return operation.apply(this, names)
+}
+
+var sequence = function (/* ...operations */) {
     var fns = arguments,
-        l = len(arguments)
-    console.log(l)
-    console.log(fns)
+        l = arguments.length
     var seq = function () {
         var i = -1
         var args = toArray(arguments)
@@ -33,20 +62,9 @@ var sequence = function () {
     else return seq
 }
 
-// Util
-var each = function (objs, fn) {
-    console.log('For each: ')
-    console.log(objs)
-    if (objs.length) {
-        var results = []
-        for (var i = 0; i < objs.length; i++) {
-            results.push(fn(objs[i]))
-        }
-        return results
-    } else {
-        return fn(objs)
-    }
-}
+
+ //---------------------------------------------------------------------------
+// Jaskell Html ---------------------------------------------------------------
 
 var html = {
     select: {
@@ -68,39 +86,42 @@ var html = {
         }
     },
     class: {
-        add: function (val, elem) {
-            var add = function (o) {
-                var ind = o.className.indexOf(val)
-                if (ind > -1) return o
-                else {
-                    var classes = o.className.split(' ').concat(val.split(' '))
-                    var resultClasses = []
-                    for (var i = 0; i < len(classes); i++) {
-                        if (classes[i] != '') resultClasses.push(classes[i])
-                    }
-                    o.className = resultClasses.join(' ')
+        add: function (/* ...vals, elem */) {
+            var args = toArray(arguments)
+            var ind = args.length - 1
+            if (args[ind].toString() === '[object HTMLCollection]') {
+                var vals = args.slice(0, ind)
+                var elem = args[ind]
+            } else vals = args.slice(0)
+            var add = function (elem) {
+                for (var i = 0; i < vals.length; i++) {
+                    if (!new RegExp(vals[i]).test(elem.className))
+                        elem.className += ' ' + vals[i]
                 }
-                return o
+                return elem
             }
             if (elem) return each(elem, add)
             else return function (elem) {
                 return each(elem, add)
             }
         },
-        remove: function (val, elem) {
-            var rem = function (o) {
-                var classes = o.className.split(' ')
-                var resultClasses = []
-                for (var i = 0; i < classes.length; i++) {
-                    if (classes[i] != val && classes[i] != '')
-                        resultClasses.push(classes[i])
+        remove: function (/* ...vals, elem */) {
+            var args = toArray(arguments)
+            var ind = args.length - 1
+            if (args[ind].toString() === '[object HTMLCollection]') {
+                var vals = args.slice(0, ind)
+                var elem = args[ind]
+            } else vals = args.slice(0)
+            var rmv = function (elem) {
+                for (var i = 0; i < vals.length; i++) {
+                    elem.className.replace(vals[i], '')
+                    elem.className.trim()
                 }
-                o.className = resultClasses.join(' ')
-                return o
+                return elem
             }
-            if (elem) return each(elem, rem)
+            if (elem) return each(elem, rmv)
             else return function (elem) {
-                return each(elem, rem)
+                return each(elem, rmv)
             }
         }
     },
@@ -171,22 +192,6 @@ var html = {
                 req.send(data)
             }
         },
-        get: function () {
-            var args = ['get'].concat(toArray(arguments))
-            return html.request.create.apply(this, args)
-        },
-        post: function () {
-            var args = ['post'].concat(toArray(arguments))
-            return html.request.create.apply(this, args)
-        },
-        put: function () {
-            var args = ['put'].concat(toArray(arguments))
-            return html.request.create.apply(this, args)
-        },
-        delete: function () {
-            var args = ['delete'].concat(toArray(arguments))
-            return html.request.create.apply(this, args)
-        },
         json: {
             create: function (method, url, callback) {
                 return function sender(data) {
@@ -198,22 +203,6 @@ var html = {
                     req.setRequestHeader("Content-Type", "application/json")
                     req.send(JSON.stringify(data))
                 }
-            },
-            get: function () {
-                var args = ['get'].concat(toArray(arguments))
-                return html.request.json.create.apply(this, args)
-            },
-            post: function () {
-                var args = ['post'].concat(toArray(arguments))
-                return html.request.json.create.apply(this, args)
-            },
-            put: function () {
-                var args = ['put'].concat(toArray(arguments))
-                return html.request.json.create.apply(this, args)
-            },
-            delete: function () {
-                var args = ['delete'].concat(toArray(arguments))
-                return html.request.json.create.apply(this, args)
             }
         }
     },
@@ -227,10 +216,20 @@ var html = {
     }
 }
 
-var using = function (nameSpace, operations) {
-    return operations(nameSpace)
-}
 
+ //---------------------------------------------------------------------------
+// Ehancements & Shortcuts ----------------------------------------------------
+
+each([html.request, html.request.json], function write(_) {
+    _.get = _.create.curry('get')
+    _.post = _.create.curry('post')
+    _.put = _.create.curry('put')
+    _.delete = _.create.curry('delete')
+})
+
+
+ //---------------------------------------------------------------------------
+// Samples & Tests ------------------------------------------------------------
 
 using(html, function operations(_) {
 
@@ -254,7 +253,7 @@ using(html, function operations(_) {
     sequence(
         _.select.class('neat'),
         _.class.remove('est'),
-        _.class.add('  woah     dude  '),
+        _.class.add('woah','dude'),
         _.event.capture('click', function (event) {
             event.preventDefault()
             using(event.currentTarget, sequence(
@@ -345,44 +344,3 @@ using(html, function operations(_) {
     sequence(netLog, sender)()
     */
 })
-
-/*
- //jQuery euivalent
- $(document).ready(function() {
-
- $('#test-pane').append('!')
-
- var append123 = function(sel) {
- $(sel)
- .append('1')
- .append('2')
- .append('3')
- .addClass('neat')
- .removeClass('test0')
- }
-
- $('.test1').removeClass('thing')
-
- $('.neat')
- .removeClass('est')
- .addClass('   woah    dude  ')
- .on('click', function(event) {
- event.preventDefault()
- $(event.currentTarget)
- .append('..')
- .append('?')
- console.log('appending', event.currentTarget)
- })
- .append('...')
-
- $('.test5').append('???')
-
- $('button')
- .append('Button')
- .on('click', function(event) {
- event.preventDefault()
- alert('neat')
- append123('.test0')
- })
- })
- */
