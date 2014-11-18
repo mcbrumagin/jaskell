@@ -125,6 +125,18 @@ var html = {
             }
         }
     },
+    css: function(styles, elem) {
+        var style = function (elem) {
+            for (var style in styles) {
+                elem.style[style] = styles[style]
+            }
+            return elem
+        }
+        if (elem) return each(elem, style)
+        else return function (elem) {
+            return each(elem, style)
+        }
+    },
     event: {
         listen: function (type, handler, elem) {
             var bind = function (elem) {
@@ -343,4 +355,11 @@ using(html, function operations(_) {
 
     sequence(netLog, sender)()
     */
+    html.css({
+        "background-color": "#def",
+        "border": "1px solid #999",
+        "border-radius": "5px",
+        "padding": "5px",
+        "margin": "5px"
+    },html.select.class('test4'))
 })
