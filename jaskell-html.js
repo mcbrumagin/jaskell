@@ -62,6 +62,19 @@ var sequence = function (/* ...operations */) {
     else return seq
 }
 
+var compose = function () {
+    var fns = arguments,
+        len = arguments.length
+    return function () {
+        var i = len
+        var args = toArray(arguments)
+        while ( --i >= 0 ) {
+            args = [fns[i].apply(this, args)]
+        }
+        return args[0]
+    }
+}
+
 
  //---------------------------------------------------------------------------
 // Jaskell Html ---------------------------------------------------------------
@@ -125,16 +138,47 @@ var html = {
             }
         }
     },
-    css: function(styles, elem) {
-        var style = function (elem) {
-            for (var style in styles) {
-                elem.style[style] = styles[style]
+    style: {
+        css: function(styles, elem) {
+            var style = function (elem) {
+                for (var style in styles) {
+                    elem.style[style] = styles[style]
+                }
+                return elem
             }
-            return elem
-        }
-        if (elem) return each(elem, style)
-        else return function (elem) {
-            return each(elem, style)
+            if (elem) return each(elem, style)
+            else return function (elem) {
+                return each(elem, style)
+            }
+        },
+        animate: function(style, start, end, duration, callback, elem) {
+            if (!isFunction(callback)) {
+                elem = callback
+            } else {
+                var callElem = callback.curry(elem)
+                setTimeout(callElem, duration)
+            }
+            var transition = function (elem) {
+                var durSec = duration / 1000
+                elem.style[style] = start
+                elem.style['transition'] = style + ' ' + durSec + 's'
+                elem.style[style] = end
+                return elem
+            }
+            if (elem) return each(elem, transition)
+            else return function (elem) {
+                return each(elem, transition)
+            }
+        },
+        reset: function (elem) {
+            var reset = function (elem) {
+                elem.removeAttribute('style')
+                return elem
+            }
+            if (elem) return each(elem, reset)
+            else return function (elem) {
+                return each(elem, reset)
+            }
         }
     },
     event: {
@@ -291,8 +335,25 @@ using(html, function operations(_) {
         _.append(' Button'),
         _.event.capture('click', function (event) {
             event.preventDefault()
-            alert('neat')
             append123('test0')
+
+            _.style.animate('color', '#000', '#fff', 5000,
+                _.style.animate('color', '#fff', '#000', 3000,
+                    _.style.reset), _.select.class('neat'))
+            
+            /*compose(
+                _.style.animate('color', '#000', '#fff', 5000),
+                _.style.animate('color', '#fff', '#000', 3000),
+                _.style.reset
+            )(_.select.class('neat'))
+            */
+
+            /*_.style.animate('color', '#000', '#fff', 5000, function (elem) {
+                _.style.animate('color', '#fff', '#000', 3000, function (elem) {
+                        _.style.reset(elem)
+                    }, elem)
+                }, _.select.class('neat'))
+            }*/
         })
     )
 
@@ -355,7 +416,7 @@ using(html, function operations(_) {
 
     sequence(netLog, sender)()
     */
-    html.css({
+    html.style.css({
         "background-color": "#def",
         "border": "1px solid #999",
         "border-radius": "5px",
