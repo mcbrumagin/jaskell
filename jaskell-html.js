@@ -75,6 +75,76 @@ var compose = function () {
     }
 }
 
+// Adapted from http://trac.webkit.org/browser/trunk/Source/WebCore/platform/graphics/UnitBezier.h
+var UnitBezier = function (p1x, p1y, p2x, p2y) {
+
+    // Calculate the polynomial coefficients, implicit first and last control points are (0,0) and (1,1).
+    var cx = 3.0 * p1x
+    var bx = 3.0 * (p2x - p1x) - cx
+    var ax = 1.0 - cx - bx
+
+    var cy = 3.0 * p1y
+    var by = 3.0 * (p2y - p1y) - cy
+    var ay = 1.0 - cy - by
+
+    var sampleCurveX = function (t) {
+        // `ax t^3 + bx t^2 + cx t' expanded using Horner's rule.
+        return ((ax * t + bx) * t + cx) * t
+    }
+
+    var sampleCurveY = function (t) {
+        return ((ay * t + by) * t + cy) * t
+    }
+
+    var sampleCurveDerivativeX = function (t) {
+        return (3.0 * ax * t + 2.0 * bx) * t + cx
+    }
+
+    // Given an x value, find a parametric value it came from.
+    var solveCurveX = function (x, epsilon) {
+        var t0, t1, t2, x2, d2, i
+
+        // First try a few iterations of Newton's method -- normally very fast.
+        for (t2 = x, i = 0; i < 8; i++) {
+            x2 = sampleCurveX(t2) - x
+            if (Math.abs(x2) < epsilon) return t2
+            d2 = sampleCurveDerivativeX(t2)
+            if (Math.abs(d2) < 1e-6) break
+            t2 = t2 - x2 / d2
+        }
+
+        // Fall back to the bisection method for reliability.
+        t0 = 0.0
+        t1 = 1.0
+        t2 = x
+
+        if (t2 < t0) return t0
+        if (t2 > t1) return t1
+
+        while (t0 < t1) {
+            x2 = sampleCurveX(t2)
+            if (Math.abs(x2 - x) < epsilon)  return t2
+            if (x > x2) t0 = t2
+            else t1 = t2
+            t2 = (t1 - t0) * .5 + t0
+        }
+
+        // Failure.
+        return t2
+    }
+
+    var solve = function (x, epsilon) {
+        return sampleCurveY(solveCurveX(x, epsilon))
+    }
+
+    this.sampleCurveX = sampleCurveX
+    this.sampleCurveY = sampleCurveY
+    this.sampleCurveDerivativeX = sampleCurveDerivativeX
+    this.solveCurveX = solveCurveX
+    this.solve = solve
+
+    return this
+}
 
  //---------------------------------------------------------------------------
 // Jaskell Html ---------------------------------------------------------------
@@ -138,6 +208,61 @@ var html = {
             }
         }
     },
+    transition: {
+        bezier: function (bezier, prop, start, end, duration, callback, elem) {
+            if (isNaN(duration)) {
+                elem = callback
+                callback = duration
+                duration = end
+                end = start
+                start = null
+            }
+            if (!isFunction(callback)) {
+                elem = callback
+            }
+            bezier = new UnitBezier(bezier[0], bezier[1], bezier[2], bezier[3])
+            var transition = function (elem) {
+                var stepTime = 10 // TODO: Configuration constants
+                if (start == null) start = elem[prop]
+                var val = start
+                var magnitude = 2 * (end - start) * stepTime / duration
+                var stepVal = stepTime / duration
+                var values = []
+                var steps = duration / stepTime
+                var step = 0
+                var startTime = new Date()
+                console.log(startTime.getSeconds() + '.' + startTime.getMilliseconds())
+                console.log('running transition on', prop, 'for', steps, 'steps of', stepVal, 'over', duration, 'ms')
+                var timer = setInterval(function () {
+                    if (step >= steps) {
+                        clearTimeout(timer)
+                        elem[prop] = end
+                        var endTime = new Date()
+                        console.log('steps taken', values,'every',stepTime,'ms')
+                        console.log(endTime.getSeconds() + '.' + endTime.getMilliseconds())
+                    } else {
+                        var input = stepVal * step
+                        var solution = bezier.solve(input, .001) // TODO: Pick epsilon based on magnitude/steps/or something
+                        val += solution * magnitude / (input ? input : 1)
+                        /*values.push({
+                            step: step,
+                            input: input,
+                            solution: solution,
+                            value: val
+                        })*/
+                        // Do not force the browser to handle unnecessary assignments
+                        if (elem[prop] != Math.round(val)) elem[prop] = Math.round(val)
+                    }
+                    step++
+                }, stepTime)
+                return elem
+            }
+            if (elem) return each(elem, transition)
+            else return function (elem) {
+                return each(elem, transition)
+            }
+        }
+    },
     style: {
         css: function(styles, elem) {
             var style = function (elem) {
@@ -152,17 +277,23 @@ var html = {
             }
         },
         animate: function(style, start, end, duration, callback, elem) {
+            if (isNaN(duration)) {
+                elem = callback
+                callback = duration
+                duration = end
+                end = start
+                start = null
+            }
             if (!isFunction(callback)) {
                 elem = callback
-            } else {
-                var callElem = callback.curry(elem)
-                setTimeout(callElem, duration)
             }
             var transition = function (elem) {
                 var durSec = duration / 1000
-                elem.style[style] = start
+                if(start != null) elem.style[style] = start
                 elem.style['transition'] = style + ' ' + durSec + 's'
                 elem.style[style] = end
+                var callElem = callback.curry(elem)
+                setTimeout(callElem, duration)
                 return elem
             }
             if (elem) return each(elem, transition)
@@ -171,6 +302,7 @@ var html = {
             }
         },
         reset: function (elem) {
+            console.log('resetting',elem)
             var reset = function (elem) {
                 elem.removeAttribute('style')
                 return elem
@@ -275,6 +407,13 @@ var html = {
 
  //---------------------------------------------------------------------------
 // Ehancements & Shortcuts ----------------------------------------------------
+
+using(html.transition, function write(_) {
+    _.linear = _.bezier.curry([0, 0, 1, 1])
+    _.easeOut = _.bezier.curry([0, 0, 0.58, 1])
+    _.easeInOut = _.bezier.curry([0.42, 0, 0.58, 1])
+    _.easeIn = _.bezier.curry([0.42, 0, 1, 1])
+})
 
 each([html.request, html.request.json], function write(_) {
     _.get = _.create.curry('get')
@@ -423,4 +562,8 @@ using(html, function operations(_) {
         "padding": "5px",
         "margin": "5px"
     },html.select.class('test4'))
+
+    _.event.capture('click', function(event) {
+        _.transition.easeInOut('scrollTop', 0, 1000, _.select.class('sandbox-preview'))
+    }, _.select.class('test0'))
 })
