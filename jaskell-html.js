@@ -16,14 +16,17 @@ var jaskell = new function () {
         }
     }
 
-    this.isFunction = function (obj) {
+    var isFunction = function (obj) {
         return {}.toString.call(obj) === '[object Function]'
     }
+    this.isFunction = isFunction
+
     var toArray = function (args) {
         return Array.prototype.slice.call(args)
-    } this.toArray = toArray
+    }
+    this.toArray = toArray
 
-    this.each = function (objs, fn) {
+    var each = function (objs, fn) {
         if (objs.length) {
             var results = []
             for (var i = 0; i < objs.length; i++) {
@@ -32,23 +35,25 @@ var jaskell = new function () {
             return results
         } else return fn(objs)
     }
+    this.each = each
 
-    this.using = function (/* ...names, operation */) {
+    var using = function (/* ...names, operation */) {
         var args = toArray(arguments)
         var ind = args.length - 1
         var names = args.slice(0, ind)
         var operation = args[ind]
         return operation.apply(this, names)
     }
+    this.using = using
 
-    this.sequence = function (/* ...operations */) {
+    var sequence = function (/* ...operations */) {
         var fns = arguments,
             l = arguments.length
         var seq = function () {
             var i = -1
             var args = toArray(arguments)
             while (i++ < l - 1) {
-                if (!isFunction(fns[i])) {
+                if (!jaskell.isFunction(fns[i])) {
                     var val = fns[i]
                     fns[i] = function () {
                         return val
@@ -58,11 +63,12 @@ var jaskell = new function () {
             }
             return args[0]
         }
-        if (!isFunction(fns[0])) return seq()
+        if (!jaskell.isFunction(fns[0])) return seq()
         else return seq
     }
+    this.sequence = sequence
 
-    this.compose = function () {
+    var compose = function () {
         var fns = arguments,
             len = arguments.length
         return function () {
@@ -74,6 +80,7 @@ var jaskell = new function () {
             return args[0]
         }
     }
+    this.compose = compose
 
     return this
 }
@@ -154,6 +161,13 @@ jaskell.html = new function () {
      //---------------------------------------------------------------------------
     // Jaskell Html ---------------------------------------------------------------
 
+    var doEachIfElem = function (elem, fn) {
+        if (elem) return jaskell.each(elem, fn)
+        else return function (elem) {
+            return jaskell.each(elem, fn)
+        }
+    }
+
     var html = {
         select: {
             id: document.getElementById.bind(document),
@@ -168,10 +182,7 @@ jaskell.html = new function () {
                 o.innerHTML += val;
                 return o
             }
-            if (elem) return each(elem, append)
-            else return function (elem) {
-                return each(elem, append)
-            }
+            return doEachIfElem(elem, append)
         },
         class: {
             add: function (/* ...vals, elem */) {
@@ -188,10 +199,7 @@ jaskell.html = new function () {
                     }
                     return elem
                 }
-                if (elem) return each(elem, add)
-                else return function (elem) {
-                    return each(elem, add)
-                }
+                return doEachIfElem(elem, add)
             },
             remove: function (/* ...vals, elem */) {
                 var args = jaskell.toArray(arguments)
@@ -200,17 +208,14 @@ jaskell.html = new function () {
                     var vals = args.slice(0, ind)
                     var elem = args[ind]
                 } else vals = args.slice(0)
-                var rmv = function (elem) {
+                var remove = function (elem) {
                     for (var i = 0; i < vals.length; i++) {
-                        elem.className.replace(vals[i], '')
-                        elem.className.trim()
+                        var regex = new RegExp('(^|\\s)' + vals[i] + '(?=\\s|$)', 'g')
+                        elem.className = elem.className.replace(regex, '').trim()
                     }
                     return elem
                 }
-                if (elem) return each(elem, rmv)
-                else return function (elem) {
-                    return each(elem, rmv)
-                }
+                return doEachIfElem(elem, remove)
             }
         },
         transition: {
@@ -222,7 +227,7 @@ jaskell.html = new function () {
                     end = start
                     start = null
                 }
-                if (!isFunction(callback)) {
+                if (!jaskell.isFunction(callback)) {
                     elem = callback
                 }
                 bezier = new UnitBezier(bezier[0], bezier[1], bezier[2], bezier[3])
@@ -262,24 +267,18 @@ jaskell.html = new function () {
                     }, stepTime)
                     return elem
                 }
-                if (elem) return each(elem, transition)
-                else return function (elem) {
-                    return each(elem, transition)
-                }
+                return doEachIfElem(elem, transition)
             }
         },
         style: {
             css: function(styles, elem) {
-                var style = function (elem) {
+                var css = function (elem) {
                     for (var style in styles) {
                         elem.style[style] = styles[style]
                     }
                     return elem
                 }
-                if (elem) return each(elem, style)
-                else return function (elem) {
-                    return each(elem, style)
-                }
+                return doEachIfElem(elem, css)
             },
             animate: function(style, start, end, duration, callback, elem) {
                 if (isNaN(duration)) {
@@ -289,10 +288,10 @@ jaskell.html = new function () {
                     end = start
                     start = null
                 }
-                if (!isFunction(callback)) {
+                if (!jaskell.isFunction(callback)) {
                     elem = callback
                 }
-                var transition = function (elem) {
+                var animate = function (elem) {
                     var durSec = duration / 1000
                     if(start != null) elem.style[style] = start
                     elem.style['transition'] = style + ' ' + durSec + 's'
@@ -301,10 +300,7 @@ jaskell.html = new function () {
                     setTimeout(callElem, duration)
                     return elem
                 }
-                if (elem) return each(elem, transition)
-                else return function (elem) {
-                    return each(elem, transition)
-                }
+                return doEachIfElem(elem, animate)
             },
             reset: function (elem) {
                 console.log('resetting',elem)
@@ -312,32 +308,23 @@ jaskell.html = new function () {
                     elem.removeAttribute('style')
                     return elem
                 }
-                if (elem) return each(elem, reset)
-                else return function (elem) {
-                    return each(elem, reset)
-                }
+                return doEachIfElem(elem, reset)
             }
         },
         event: {
             listen: function (type, handler, elem) {
-                var bind = function (elem) {
+                var listen = function (elem) {
                     elem.addEventListener(type, handler, false)
                     return elem
                 }
-                if (elem) return each(elem, bind)
-                else return function (elem) {
-                    return each(elem, bind)
-                }
+                return doEachIfElem(elem, listen)
             },
             capture: function (type, handler, elem) {
-                var bind = function (elem) {
+                var capture = function (elem) {
                     elem.addEventListener(type, handler, true)
                     return elem
                 }
-                if (elem) return each(elem, bind)
-                else return function (elem) {
-                    return each(elem, bind)
-                }
+                return doEachIfElem(elem, capture)
             },
             watch: function (type, handler, target) {
             },
@@ -358,10 +345,7 @@ jaskell.html = new function () {
                     else elem.dispatchEvent(html.event.create(event)())
                     return elem
                 }
-                if (elem) return each(elem, trigger)
-                else return function (elem) {
-                    return each(elem, trigger)
-                }
+                return doEachIfElem(elem, trigger)
             }
         },
         request: {
@@ -369,7 +353,7 @@ jaskell.html = new function () {
                 var defaultHeaders = {
                     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
                 }
-                if (isFunction(headers)) {
+                if (jaskell.isFunction(headers)) {
                     callback = headers
                     headers = defaultHeaders
                 }
@@ -434,11 +418,15 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 
 jaskell.using(jaskell, jaskell.html, function operations(_, $) {
 
+    console.log(0)
+
     var iterator = 0;
     $.event.create('test', true, true, function () {
         return {date: new Date(), iteration: iterator++}
     })
     $.append('!', $.select.id('test-pane'))
+
+    console.log(1)
 
     var append123 = _.sequence(
         $.select.class,
@@ -449,7 +437,11 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         $.class.remove('test0')
     )
 
-    $.class.remove('thing', _.select.class('test1'))
+    console.log(2)
+
+    $.class.remove('thing', $.select.class('test1'))
+
+    console.log(3)
 
     _.sequence(
         $.select.class('neat'),
@@ -457,7 +449,7 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         $.class.add('woah','dude'),
         $.event.capture('click', function (event) {
             event.preventDefault()
-            using(event.currentTarget, sequence(
+            _.using(event.currentTarget, _.sequence(
                 $.append('..'),
                 $.append('?'),
                 $.log('appending')
@@ -465,15 +457,20 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         }),
         $.append('...'),
         $.select.class('test5'),
-        $.append('???'),
+        $.append('???')/*,
         $.event.capture('click', function () {
             $.event.trigger('test', document.body)
-        })
+        })*/
     )
+
+    console.log(4)
 
     $.event.capture('test', function (event) {
         console.log(event.detail)
     }, document.body)
+
+
+    console.log(5)
 
     _.sequence(
         $.select.tag('button'),
@@ -502,6 +499,8 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         })
     )
 
+    console.log(6)
+
     _.sequence(
         (function (a,b) {
             return function () {
@@ -529,6 +528,8 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         console.log('Result is', response, 'with status', status)
     }, _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}))
     */
+
+    console.log(7)
 
     // All are equivalent
     $.request.create(
@@ -561,6 +562,9 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
 
     sequence(netLog, sender)()
     */
+
+    console.log(8)
+
     $.style.css({
         "background-color": "#def",
         "border": "1px solid #999",
@@ -569,7 +573,9 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         "margin": "5px"
     }, $.select.class('test4'))
 
+    console.log(9)
+
     $.event.capture('click', function(event) {
-        $.transition.easeInOut('scrollTop', 0, 1000, _.select.class('sandbox-preview'))
+        $.transition.easeInOut('scrollTop', 0, 1000, $.select.class('sandbox-preview'))
     }, $.select.class('test0'))
 })
