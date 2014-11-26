@@ -235,8 +235,8 @@ jaskell.html = new function () {
                     var stepTime = 10 // TODO: Configuration constants
                     if (start == null) start = elem[prop]
                     var val = start
-                    var magnitude = 2 * (end - start) * stepTime / duration
                     var stepVal = stepTime / duration
+                    var magnitude = (end - start) * stepVal
                     var values = []
                     var steps = duration / stepTime
                     var step = 0
@@ -248,18 +248,19 @@ jaskell.html = new function () {
                             clearTimeout(timer)
                             elem[prop] = end
                             var endTime = new Date()
-                            console.log('steps taken', values,'every',stepTime,'ms')
+                            console.log('steps taken', values, 'every', stepTime, 'ms')
                             console.log(endTime.getSeconds() + '.' + endTime.getMilliseconds())
                         } else {
                             var input = stepVal * step
-                            var solution = bezier.solve(input, .001) // TODO: Pick epsilon based on magnitude/steps/or something
-                            val += solution * magnitude / (input ? input : 1)
-                            /*values.push({
-                                step: step,
+                            var solution = bezier.solve(input, .0001) // TODO: Pick epsilon based on magnitude/steps/or something
+                            var difference = solution * magnitude / (input ? input : 100)
+                            val += difference
+                            values.push({
                                 input: input,
                                 solution: solution,
-                                value: val
-                            })*/
+                                value: val,
+                                change: difference
+                            })
                             // Do not force the browser to handle unnecessary assignments
                             if (elem[prop] != Math.round(val)) elem[prop] = Math.round(val)
                         }
@@ -576,6 +577,6 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
     console.log(9)
 
     $.event.capture('click', function(event) {
-        $.transition.easeInOut('scrollTop', 0, 1000, $.select.class('sandbox-preview'))
+        $.transition.easeInOut('scrollTop', 0, 500, $.select.class('sandbox-preview'))
     }, $.select.class('test0'))
 })
