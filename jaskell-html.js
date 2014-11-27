@@ -1,32 +1,30 @@
-// TODO: Wrap in jaskell function
-//   refactor to use private methods (should cut 25-50% of code)
+// TODO: Refactor to use private methods (should cut 25-50% of code)
 // TODO: Import other jaskell functions
-//   refactor to have core jaskell script and jaskell-html separately
-
 
  //---------------------------------------------------------------------------
 // Core Jaskell Functions -----------------------------------------------------
 
 var jaskell = new function () {
+    
     Function.prototype.curry = function () {
         var f = this
-        var a = toArray(arguments)
+        var a = _.toArray(arguments)
         return function curried() {
-            return f.apply(this, a.concat(toArray(arguments)))
+            return f.apply(this, a.concat(_.toArray(arguments)))
         }
     }
 
-    var isFunction = function (obj) {
+    var _ = {}
+
+    _.isFunction = function (obj) {
         return {}.toString.call(obj) === '[object Function]'
     }
-    this.isFunction = isFunction
 
-    var toArray = function (args) {
+    _.toArray = function (args) {
         return Array.prototype.slice.call(args)
     }
-    this.toArray = toArray
 
-    var each = function (objs, fn) {
+    _.each = function (objs, fn) {
         if (objs.length) {
             var results = []
             for (var i = 0; i < objs.length; i++) {
@@ -35,25 +33,23 @@ var jaskell = new function () {
             return results
         } else return fn(objs)
     }
-    this.each = each
 
-    var using = function (/* ...names, operation */) {
-        var args = toArray(arguments)
+    _.using = function (/* ...names, operation */) {
+        var args = _.toArray(arguments)
         var ind = args.length - 1
         var names = args.slice(0, ind)
         var operation = args[ind]
         return operation.apply(this, names)
     }
-    this.using = using
 
-    var sequence = function (/* ...operations */) {
+    _.sequence = function (/* ...operations */) {
         var fns = arguments,
             l = arguments.length
         var seq = function () {
             var i = -1
-            var args = toArray(arguments)
+            var args = _.toArray(arguments)
             while (i++ < l - 1) {
-                if (!jaskell.isFunction(fns[i])) {
+                if (!_.isFunction(fns[i])) {
                     var val = fns[i]
                     fns[i] = function () {
                         return val
@@ -63,27 +59,37 @@ var jaskell = new function () {
             }
             return args[0]
         }
-        if (!jaskell.isFunction(fns[0])) return seq()
+        if (!_.isFunction(fns[0])) return seq()
         else return seq
     }
-    this.sequence = sequence
 
-    var compose = function () {
+    _.compose = function () {
         var fns = arguments,
             len = arguments.length
         return function () {
             var i = len
-            var args = toArray(arguments)
+            var args = _.toArray(arguments)
             while ( --i >= 0 ) {
                 args = [fns[i].apply(this, args)]
             }
             return args[0]
         }
     }
-    this.compose = compose
 
-    return this
+    _.range = function (start, increment, end) {
+        var array = []
+        for (var i = start; i < end; i = i + increment) {
+            array.push(i)
+        }
+        return array
+    }
+
+    return _
 }
+
+
+ //---------------------------------------------------------------------------
+// Jaskell Html ---------------------------------------------------------------
 
 jaskell.html = new function () {
 
@@ -158,9 +164,6 @@ jaskell.html = new function () {
         return this
     }
 
-     //---------------------------------------------------------------------------
-    // Jaskell Html ---------------------------------------------------------------
-
     var doEachIfElem = function (elem, fn) {
         if (elem) return jaskell.each(elem, fn)
         else return function (elem) {
@@ -168,7 +171,10 @@ jaskell.html = new function () {
         }
     }
 
-    var html = {
+    var _ = {
+        configuration: {
+            stepTime: 10
+        },
         select: {
             id: document.getElementById.bind(document),
             one: document.querySelector.bind(document),
@@ -232,40 +238,26 @@ jaskell.html = new function () {
                 }
                 bezier = new UnitBezier(bezier[0], bezier[1], bezier[2], bezier[3])
                 var transition = function (elem) {
-                    var stepTime = 10 // TODO: Configuration constants
                     if (start == null) start = elem[prop]
-                    var val = start
-                    var stepVal = stepTime / duration
-                    var magnitude = (end - start) * stepVal
-                    var values = []
-                    var steps = duration / stepTime
+                    var stepVal = _.configuration.stepTime / duration
+                    var max = duration / _.configuration.stepTime
+                    var steps = [start]
+                    for (var i = 0; i < max; i++) {
+                        // TODO: Pick epsilon based on magnitude/steps/or something?
+                        var solution = bezier.solve(stepVal * i, .001)
+                        steps.push(Math.round(solution * (end - start) + start))
+                    }
                     var step = 0
-                    var startTime = new Date()
-                    console.log(startTime.getSeconds() + '.' + startTime.getMilliseconds())
-                    console.log('running transition on', prop, 'for', steps, 'steps of', stepVal, 'over', duration, 'ms')
                     var timer = setInterval(function () {
-                        if (step >= steps) {
+                        if (!steps[step]) {
                             clearTimeout(timer)
                             elem[prop] = end
-                            var endTime = new Date()
-                            console.log('steps taken', values, 'every', stepTime, 'ms')
-                            console.log(endTime.getSeconds() + '.' + endTime.getMilliseconds())
                         } else {
-                            var input = stepVal * step
-                            var solution = bezier.solve(input, .0001) // TODO: Pick epsilon based on magnitude/steps/or something
-                            var difference = solution * magnitude / (input ? input : 100)
-                            val += difference
-                            values.push({
-                                input: input,
-                                solution: solution,
-                                value: val,
-                                change: difference
-                            })
                             // Do not force the browser to handle unnecessary assignments
-                            if (elem[prop] != Math.round(val)) elem[prop] = Math.round(val)
+                            if (elem[prop] != steps[step]) elem[prop] = steps[step]
                         }
                         step++
-                    }, stepTime)
+                    }, _.configuration.stepTime)
                     return elem
                 }
                 return doEachIfElem(elem, transition)
@@ -334,16 +326,16 @@ jaskell.html = new function () {
                 var options = {}
                 options.bubbles = bubbles === undefined ? true : bubbles
                 options.cancelable = cancelable === undefined ? true : cancelable
-                html.event.list[name] = function () {
+                _.event.list[name] = function () {
                     if (detail) options.detail = detail()
                     return new CustomEvent(name, options)
                 }
             },
             trigger: function (event, elem) {
                 var trigger = function (elem) {
-                    var evt = html.event.list[event]
+                    var evt = _.event.list[event]
                     if (evt) elem.dispatchEvent(evt())
-                    else elem.dispatchEvent(html.event.create(event)())
+                    else elem.dispatchEvent(_.event.create(event)())
                     return elem
                 }
                 return doEachIfElem(elem, trigger)
@@ -393,7 +385,7 @@ jaskell.html = new function () {
             else return log
         }
     }
-    return html
+    return _
 }
 
  //---------------------------------------------------------------------------
@@ -414,7 +406,7 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 })
 
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
 jaskell.using(jaskell, jaskell.html, function operations(_, $) {
@@ -458,10 +450,10 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         }),
         $.append('...'),
         $.select.class('test5'),
-        $.append('???')/*,
+        $.append('???'),
         $.event.capture('click', function () {
             $.event.trigger('test', document.body)
-        })*/
+        })
     )
 
     console.log(4)
@@ -480,23 +472,9 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
             event.preventDefault()
             append123('test0')
 
-            $.style.animate('color', '#000', '#fff', 5000,
-                $.style.animate('color', '#fff', '#000', 3000,
+            $.style.animate('color', '#fff', '#000', 5000,
+                $.style.animate('color', '#000', '#fff', 3000,
                     $.style.reset), $.select.class('neat'))
-            
-            /*compose(
-                _.style.animate('color', '#000', '#fff', 5000),
-                _.style.animate('color', '#fff', '#000', 3000),
-                _.style.reset
-            )(_.select.class('neat'))
-            */
-
-            /*_.style.animate('color', '#000', '#fff', 5000, function (elem) {
-                _.style.animate('color', '#fff', '#000', 3000, function (elem) {
-                        _.style.reset(elem)
-                    }, elem)
-                }, _.select.class('neat'))
-            }*/
         })
     )
 
@@ -517,58 +495,37 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
         })(10,20)
     )()
 
-    /*_.request.get({}, '/sandbox/test', {test:'test'}, function (res) {
-        console.log(res.slice(0, 50).concat('...'))
-    })*/
-
-    /*_.request.post({"Content-Type": "application/json"},'/sandbox/log', {test:'test'}, function (res, status) {
-        console.log('Result:', status)
-    })*/
-
-    /*_.request.send({test:'test'}, function(response, status) {
-        console.log('Result is', response, 'with status', status)
-    }, _.request.create('post','/sandbox/log',{"Content-Type": "application/json"}))
-    */
-
     console.log(7)
 
-    // All are equivalent
-    $.request.create(
-        'post', '/sandbox/log', {
-            "Content-Type": "application/json"
-        }, function(response, status) {
-            console.log('Result is', response, 'with status', status)
-        })(JSON.stringify({test:'test1'}))
-
-    $.request.post('/sandbox/log', {
-            "Content-Type": "application/json"
-        }, function(response, status) {
-            console.log('Result is', response, 'with status', status)
-        })(JSON.stringify({test:'test2'}))
-
-    $.request.json.create(
-        'post', '/sandbox/log', function(response, status) {
-            console.log('Result is', response, 'with status', status)
-        })({test:'test3'})
-
-    $.request.json.post('/sandbox/log', function(response, status) {
-            console.log('Result is', response, 'with status', status)
-        })({test:'test4'})
-
-    /*
-    var netLog = _.request.create('post','/sandbox/log',{"Content-Type": "application/json"})
-    var sender = _.request.send({test:'test'}, function(response, status) {
+    var url = '/sandbox/log'
+    var contentHeader = { "Content-Type": "application/json" }
+    var callback = function(response, status) {
         console.log('Result is', response, 'with status', status)
-    })
+    }
+    var data = {test:'test'}
 
-    sequence(netLog, sender)()
-    */
+    // All are equivalent
+    data.test = 'test1'
+    var sendReq1 = $.request.create('post', url, contentHeader, callback)
+    sendReq1(JSON.stringify(data))
+
+    data.test = 'test2'
+    var sendReq2 = $.request.post(url, contentHeader, callback)
+    sendReq2(JSON.stringify(data))
+
+    data.test = 'test3'
+    var sendReq3 = $.request.json.create('post', url, callback)
+    sendReq3(data)
+
+    data.test = 'test4'
+    var sendReq4 = $.request.json.post(url, callback)
+    sendReq4(data)
 
     console.log(8)
 
     $.style.css({
-        "background-color": "#def",
-        "border": "1px solid #999",
+        "background-color": "#123",
+        "border": "1px solid #666",
         "border-radius": "5px",
         "padding": "5px",
         "margin": "5px"
@@ -576,7 +533,7 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
 
     console.log(9)
 
-    $.event.capture('click', function(event) {
+    $.event.capture('click', function() {
         $.transition.easeInOut('scrollTop', 0, 500, $.select.class('sandbox-preview'))
     }, $.select.class('test0'))
 })
