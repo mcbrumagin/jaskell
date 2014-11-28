@@ -109,11 +109,9 @@ jaskell.html = new function () {
             // `ax t^3 + bx t^2 + cx t' expanded using Horner's rule.
             return ((ax * t + bx) * t + cx) * t
         }
-
         var sampleCurveY = function (t) {
             return ((ay * t + by) * t + cy) * t
         }
-
         var sampleCurveDerivativeX = function (t) {
             return (3.0 * ax * t + 2.0 * bx) * t + cx
         }
@@ -141,13 +139,13 @@ jaskell.html = new function () {
 
             while (t0 < t1) {
                 x2 = sampleCurveX(t2)
-                if (Math.abs(x2 - x) < epsilon)  return t2
+                if (Math.abs(x2 - x) < epsilon) return t2
                 if (x > x2) t0 = t2
                 else t1 = t2
                 t2 = (t1 - t0) * .5 + t0
             }
 
-            // Failure.
+            // Failure
             return t2
         }
 
@@ -155,13 +153,7 @@ jaskell.html = new function () {
             return sampleCurveY(solveCurveX(x, epsilon))
         }
 
-        this.sampleCurveX = sampleCurveX
-        this.sampleCurveY = sampleCurveY
-        this.sampleCurveDerivativeX = sampleCurveDerivativeX
-        this.solveCurveX = solveCurveX
-        this.solve = solve
-
-        return this
+        return solve
     }
 
     var doEachIfElem = function (elem, fn) {
@@ -236,7 +228,7 @@ jaskell.html = new function () {
                 if (!jaskell.isFunction(callback)) {
                     elem = callback
                 }
-                bezier = new UnitBezier(bezier[0], bezier[1], bezier[2], bezier[3])
+                bezier = new UnitBezier(...bezier)
                 var transition = function (elem) {
                     if (start == null) start = elem[prop]
                     var stepVal = _.configuration.stepTime / duration
@@ -244,7 +236,7 @@ jaskell.html = new function () {
                     var steps = [start]
                     for (var i = 0; i < max; i++) {
                         // TODO: Pick epsilon based on magnitude/steps/or something?
-                        var solution = bezier.solve(stepVal * i, .001)
+                        var solution = bezier(stepVal * i, .001)
                         steps.push(Math.round(solution * (end - start) + start))
                     }
                     var step = 0
@@ -406,7 +398,7 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 })
 
 
-//---------------------------------------------------------------------------
+ //---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
 jaskell.using(jaskell, jaskell.html, function operations(_, $) {
