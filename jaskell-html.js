@@ -20,6 +20,10 @@ var jaskell = new function () {
         return {}.toString.call(obj) === '[object Function]'
     }
 
+    _.isArray = function (obj) {
+        return Object.prototype.toString.call(obj) === '[object Array]'
+    }
+
     _.toArray = function (args) {
         return Array.prototype.slice.call(args)
     }
@@ -164,9 +168,6 @@ jaskell.html = new function () {
     }
 
     var _ = {
-        configuration: {
-            stepTime: 10
-        },
         select: {
             id: document.getElementById.bind(document),
             one: document.querySelector.bind(document),
@@ -231,25 +232,20 @@ jaskell.html = new function () {
                 bezier = new UnitBezier(...bezier)
                 var transition = function (elem) {
                     if (start == null) start = elem[prop]
-                    var stepVal = _.configuration.stepTime / duration
-                    var max = duration / _.configuration.stepTime
-                    var steps = [start]
-                    for (var i = 0; i < max; i++) {
-                        // TODO: Pick epsilon based on magnitude/steps/or something?
-                        var solution = bezier(stepVal * i, .001)
-                        steps.push(Math.round(solution * (end - start) + start))
-                    }
-                    var step = 0
-                    var timer = setInterval(function () {
-                        if (!steps[step]) {
-                            clearTimeout(timer)
+                    var startTime = Date.now()
+                    var update = function() {
+                        var elapsed = Date.now() - startTime
+                        if (elapsed > duration) {
                             elem[prop] = end
                         } else {
+                            var solution = bezier(elapsed / duration, .001)
+                            var result = Math.round(solution * (end - start) + start)
                             // Do not force the browser to handle unnecessary assignments
-                            if (elem[prop] != steps[step]) elem[prop] = steps[step]
+                            if (elem[prop] != result) elem[prop] = result
+                            requestAnimationFrame(update)
                         }
-                        step++
-                    }, _.configuration.stepTime)
+                    }
+                    requestAnimationFrame(update)
                     return elem
                 }
                 return doEachIfElem(elem, transition)
@@ -265,27 +261,35 @@ jaskell.html = new function () {
                 }
                 return doEachIfElem(elem, css)
             },
-            animate: function(style, start, end, duration, callback, elem) {
-                if (isNaN(duration)) {
-                    elem = callback
-                    callback = duration
-                    duration = end
-                    end = start
-                    start = null
+            animate: {
+                bezier: function(bezier, style, start, end, duration, callback, elem) {
+                    if (isNaN(duration)) {
+                        elem = callback
+                        callback = duration
+                        duration = end
+                        end = start
+                        start = null
+                    }
+                    if (!jaskell.isFunction(callback)) {
+                        elem = callback
+                    }
+                    var animate = function (elem) {
+                        var durSec = duration / 1000
+                        if(start != null) elem.style[style] = start
+                        var easing = 'ease'
+                        if (jaskell.isArray(bezier)) easing = 'cubic-bezier(' + bezier.join(',') + ')'
+                        else if (bezier === 'linear') easing = 'linear'
+                        else if (bezier === 'ease-in') easing = 'ease-in'
+                        else if (bezier === 'ease-out') easing = 'ease-out'
+                        else if (bezier === 'ease-in-out') easing = 'ease-in-out'
+                        elem.style['transition'] = style + ' ' + durSec + 's ' + easing
+                        elem.style[style] = end
+                        var callElem = callback.curry(elem)
+                        setTimeout(callElem, duration)
+                        return elem
+                    }
+                    return doEachIfElem(elem, animate)
                 }
-                if (!jaskell.isFunction(callback)) {
-                    elem = callback
-                }
-                var animate = function (elem) {
-                    var durSec = duration / 1000
-                    if(start != null) elem.style[style] = start
-                    elem.style['transition'] = style + ' ' + durSec + 's'
-                    elem.style[style] = end
-                    var callElem = callback.curry(elem)
-                    setTimeout(callElem, duration)
-                    return elem
-                }
-                return doEachIfElem(elem, animate)
             },
             reset: function (elem) {
                 console.log('resetting',elem)
@@ -385,9 +389,17 @@ jaskell.html = new function () {
 
 jaskell.using(jaskell.html.transition, function write(_) {
     _.linear = _.bezier.curry([0, 0, 1, 1])
+    _.easeIn = _.bezier.curry([0.42, 0, 1, 1])
     _.easeOut = _.bezier.curry([0, 0, 0.58, 1])
     _.easeInOut = _.bezier.curry([0.42, 0, 0.58, 1])
-    _.easeIn = _.bezier.curry([0.42, 0, 1, 1])
+})
+
+jaskell.using(jaskell.html.style.animate, function write(_) {
+    _.linear = _.bezier.curry('linear')
+    _.ease = _.bezier.curry('ease')
+    _.easeIn = _.bezier.curry('ease-in')
+    _.easeOut = _.bezier.curry('ease-out')
+    _.easeInOut = _.bezier.curry('ease-in-out')
 })
 
 jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_) {
@@ -464,8 +476,8 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
             event.preventDefault()
             append123('test0')
 
-            $.style.animate('color', '#fff', '#000', 5000,
-                $.style.animate('color', '#000', '#fff', 3000,
+            $.style.animate.ease('color', '#fff', '#000', 5000,
+                $.style.animate.ease('color', '#000', '#fff', 3000,
                     $.style.reset), $.select.class('neat'))
         })
     )
@@ -528,4 +540,8 @@ jaskell.using(jaskell, jaskell.html, function operations(_, $) {
     $.event.capture('click', function() {
         $.transition.easeInOut('scrollTop', 0, 500, $.select.class('sandbox-preview'))
     }, $.select.class('test0'))
+
+    $.event.capture('click', function() {
+        $.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, $.select.id('height-test'))
+    }, $.select.class('test1'))
 })
