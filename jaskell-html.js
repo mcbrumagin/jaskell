@@ -385,6 +385,36 @@ jaskell.html = new function () {
 }
 
  //---------------------------------------------------------------------------
+// Development & Testing Helpers ----------------------------------------------
+
+jaskell.debug = {
+    test: function (fn) {
+        try {
+            fn()
+            console.info(fn.name + ', succeeded.')
+        } catch (exception) {
+            console.info(fn.name + ', failed. Exception is:')
+            console.error(exception)
+        }
+    },
+    assert: {
+        equal: function (expected, actual) {
+            if (expected !== actual) throw new Error('Expected',expected,'but got',actual)
+        },
+        contains: function (set, value) {
+
+        },
+        empty: function (object) {
+
+        },
+        error: function (fn, ...inputs) {
+
+        }
+    }
+}
+
+
+ //---------------------------------------------------------------------------
 // Ehancements & Shortcuts ----------------------------------------------------
 
 jaskell.using(jaskell.html.transition, function write(_) {
@@ -413,135 +443,144 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
  //---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
-jaskell.using(jaskell, jaskell.html, function operations(_, $) {
+jaskell.using(
+    jaskell,
+    jaskell.html, 
+    jaskell.debug.test,
+    jaskell.debug.assert,
+    function operations(_, $, test, assert) {
 
-    console.log(0)
-
-    var iterator = 0;
-    $.event.create('test', true, true, function () {
-        return {date: new Date(), iteration: iterator++}
+    test(function createCustomEvent() {
+        var iterator = 0;
+        $.event.create('test', true, true, function () {
+            return {date: new Date(), iteration: iterator++}
+        })
     })
-    $.append('!', $.select.id('test-pane'))
 
-    console.log(1)
+    test(function testAppend() {
+        $.append('!', $.select.id('test-pane'))
+    })
 
-    var append123 = _.sequence(
-        $.select.class,
-        $.append('1'),
-        $.append('2'),
-        $.append('3'),
-        $.class.add('neat'),
-        $.class.remove('test0')
-    )
+    var append123 = null;
+    test(function createAppend123Sequence() {
+        append123 = _.sequence(
+            $.select.class,
+            $.append('1'),
+            $.append('2'),
+            $.append('3'),
+            $.class.add('neat'),
+            $.class.remove('test0')
+        )
+    })
 
-    console.log(2)
+    test(function removeThingFromTest1() {
+        $.class.remove('thing', $.select.class('test1'))    
+    })
+    
+    test(function neatSequence() {
+        _.sequence(
+            $.select.class('neat'),
+            $.class.remove('est'),
+            $.class.add('woah','dude'),
+            $.event.capture('click', function (event) {
+                event.preventDefault()
+                _.using(event.currentTarget, _.sequence(
+                    $.append('..'),
+                    $.append('?'),
+                    $.log('appending')
+                ))
+            }),
+            $.append('...'),
+            $.select.class('test5'),
+            $.append('???'),
+            $.event.capture('click', function () {
+                $.event.trigger('test', document.body)
+            })
+        )
+    })
 
-    $.class.remove('thing', $.select.class('test1'))
+    test(function captureTestEvent() {
+        $.event.capture('test', function (event) {
+            console.log(event.detail)
+        }, document.body)
+    })
 
-    console.log(3)
+    test(function buttonSequence() {
+        _.sequence(
+            $.select.tag('button'),
+            $.append(' Button'),
+            $.event.capture('click', function (event) {
+                event.preventDefault()
+                append123('test0')
 
-    _.sequence(
-        $.select.class('neat'),
-        $.class.remove('est'),
-        $.class.add('woah','dude'),
-        $.event.capture('click', function (event) {
-            event.preventDefault()
-            _.using(event.currentTarget, _.sequence(
-                $.append('..'),
-                $.append('?'),
-                $.log('appending')
-            ))
-        }),
-        $.append('...'),
-        $.select.class('test5'),
-        $.append('???'),
-        $.event.capture('click', function () {
-            $.event.trigger('test', document.body)
-        })
-    )
+                _.using($.style.animate.ease, function (ease) {
+                    ease('color', '#fff', '#000', 5000,
+                        ease('color', '#000', '#fff', 3000,
+                            $.style.reset), $.select.class('neat'))
+                })
+            })
+        )
+    })
+    
+    test(function result60() {
+        _.sequence(
+            (function (a,b) {
+                return function () {
+                    return function () { return a + b }
+                }
+            })(10,20),
+            (function(a,b) {
+                return function (ab) {
+                    var result = a + b + ab()
+                    return result
+                }
+            })(10,20)
+        )()
+    })
 
-    console.log(4)
+    test(function testRequests() {
+        var url = '/sandbox/log'
+        var contentHeader = { "Content-Type": "application/json" }
+        var callback = function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        }
+        var data = {test:'test'}
 
-    $.event.capture('test', function (event) {
-        console.log(event.detail)
-    }, document.body)
+        // All are equivalent
+        data.test = 'test1'
+        var sendReq1 = $.request.create('post', url, contentHeader, callback)
+        sendReq1(JSON.stringify(data))
 
+        data.test = 'test2'
+        var sendReq2 = $.request.post(url, contentHeader, callback)
+        sendReq2(JSON.stringify(data))
 
-    console.log(5)
+        data.test = 'test3'
+        var sendReq3 = $.request.json.create('post', url, callback)
+        sendReq3(data)
 
-    _.sequence(
-        $.select.tag('button'),
-        $.append(' Button'),
-        $.event.capture('click', function (event) {
-            event.preventDefault()
-            append123('test0')
+        data.test = 'test4'
+        var sendReq4 = $.request.json.post(url, callback)
+        sendReq4(data)
+    })
 
-            $.style.animate.ease('color', '#fff', '#000', 5000,
-                $.style.animate.ease('color', '#000', '#fff', 3000,
-                    $.style.reset), $.select.class('neat'))
-        })
-    )
+    test(function testCss() {
+        $.style.css({
+            "background-color": "#123",
+            "border": "1px solid #666",
+            "border-radius": "5px",
+            "padding": "5px",
+            "margin": "5px"
+        }, $.select.class('test4'))
+    })
 
-    console.log(6)
+    test(function testTransitions() {
+        $.event.capture('click', function() {
+            $.transition.easeInOut('scrollTop', 0, 500, $.select.class('sandbox-preview'))
+        }, $.select.class('test0'))
 
-    _.sequence(
-        (function (a,b) {
-            return function () {
-                return function () { return a + b }
-            }
-        })(10,20),
-        (function(a,b) {
-            return function (ab) {
-                var result = a + b + ab()
-                console.log('test result is',result)
-                return result
-            }
-        })(10,20)
-    )()
-
-    console.log(7)
-
-    var url = '/sandbox/log'
-    var contentHeader = { "Content-Type": "application/json" }
-    var callback = function(response, status) {
-        console.log('Result is', response, 'with status', status)
-    }
-    var data = {test:'test'}
-
-    // All are equivalent
-    data.test = 'test1'
-    var sendReq1 = $.request.create('post', url, contentHeader, callback)
-    sendReq1(JSON.stringify(data))
-
-    data.test = 'test2'
-    var sendReq2 = $.request.post(url, contentHeader, callback)
-    sendReq2(JSON.stringify(data))
-
-    data.test = 'test3'
-    var sendReq3 = $.request.json.create('post', url, callback)
-    sendReq3(data)
-
-    data.test = 'test4'
-    var sendReq4 = $.request.json.post(url, callback)
-    sendReq4(data)
-
-    console.log(8)
-
-    $.style.css({
-        "background-color": "#123",
-        "border": "1px solid #666",
-        "border-radius": "5px",
-        "padding": "5px",
-        "margin": "5px"
-    }, $.select.class('test4'))
-
-    console.log(9)
-
-    $.event.capture('click', function() {
-        $.transition.easeInOut('scrollTop', 0, 500, $.select.class('sandbox-preview'))
-    }, $.select.class('test0'))
-
-    $.event.capture('click', function() {
-        $.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, $.select.id('height-test'))
-    }, $.select.class('test1'))
+        $.event.capture('click', function() {
+            $.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, $.select.id('height-test'))
+        }, $.select.class('test1'))
+    })
 })
