@@ -120,74 +120,46 @@ var jaskell = new function () {
 
 jaskell.html = new function () {
 
-    // Adapted from http://trac.webkit.org/browser/trunk/Source/WebCore/platform/graphics/UnitBezier.h
     var UnitBezier = function (p1x, p1y, p2x, p2y) {
 
-        // Calculate the polynomial coefficients, implicit first and last control points are (0,0) and (1,1).
+        // Calculate the polynomial coefficients
         var cx = 3.0 * p1x
         var bx = 3.0 * (p2x - p1x) - cx
         var ax = 1.0 - cx - bx
-
         var cy = 3.0 * p1y
         var by = 3.0 * (p2y - p1y) - cy
         var ay = 1.0 - cy - by
 
-        var sampleCurveX = function (t) {
-            // `ax t^3 + bx t^2 + cx t' expanded using Horner's rule.
-            return ((ax * t + bx) * t + cx) * t
-        }
-        var sampleCurveY = function (t) {
-            return ((ay * t + by) * t + cy) * t
-        }
-        var sampleCurveDerivativeX = function (t) {
-            return (3.0 * ax * t + 2.0 * bx) * t + cx
-        }
+        // Using Horner's rule
+        var curveX = t => ((ax * t + bx) * t + cx) * t
+        var curveY = t => ((ay * t + by) * t + cy) * t
+        var curveDerivativeX = t => (3.0 * ax * t + 2.0 * bx) * t + cx
 
-        // Given an x value, find a parametric value it came from.
+        // Given an x value, find a parametric value it came from
         var solveCurveX = function (x, epsilon) {
-            var t0, t1, t2, x2, d2, i
 
-            // First try a few iterations of Newton's method -- normally very fast.
-            for (t2 = x, i = 0; i < 8; i++) {
-                x2 = sampleCurveX(t2) - x
+            // First try Newton's method
+            for (var t2 = x, i = 0; i < 4; i++) {
+                var x2 = curveX(t2) - x
                 if (Math.abs(x2) < epsilon) return t2
-                d2 = sampleCurveDerivativeX(t2)
+                var d2 = curveDerivativeX(t2)
                 if (Math.abs(d2) < 1e-6) break
                 t2 = t2 - x2 / d2
             }
 
-            // Fall back to the bisection method for reliability.
-            t0 = 0.0
-            t1 = 1.0
-            t2 = x
-
-            if (t2 < t0) return t0
-            if (t2 > t1) return t1
-
-            while (t0 < t1) {
-                x2 = sampleCurveX(t2)
-                if (Math.abs(x2 - x) < epsilon) return t2
-                if (x > x2) t0 = t2
-                else t1 = t2
-                t2 = (t1 - t0) * .5 + t0
-            }
-
-            // Failure
-            return t2
+            // Fall back to the bisection method
+            if (x < 0) return 0
+            else return 1
         }
 
-        var solve = function (x, epsilon) {
-            return sampleCurveY(solveCurveX(x, epsilon))
-        }
+        var solve = (x, epsilon) => curveY(solveCurveX(x, epsilon))
 
         return solve
     }
 
     var doEachIfElem = function (elem, fn) {
         if (elem) return jaskell.each(elem, fn)
-        else return function (elem) {
-            return jaskell.each(elem, fn)
-        }
+        else return elem => jaskell.each(elem, fn)
     }
 
     var _ = {
@@ -200,9 +172,9 @@ jaskell.html = new function () {
             byName: document.getElementsByName.bind(document)
         },
         append: function (val, elem) {
-            var append = function (o) {
-                o.innerHTML += val;
-                return o
+            var append = function (elem) {
+                elem.innerHTML += val
+                return elem
             }
             return doEachIfElem(elem, append)
         },
@@ -307,17 +279,27 @@ jaskell.html = new function () {
                         else if (bezier === 'ease-in-out') easing = 'ease-in-out'
                         elem.style['transition'] = style + ' ' + durSec + 's ' + easing
                         elem.style[style] = end
-                        var callElem = callback.curry(elem)
-                        setTimeout(callElem, duration)
+                        setTimeout(() => callback(elem), duration)
                         return elem
                     }
                     return doEachIfElem(elem, animate)
                 }
             },
-            reset: function (elem) {
-                console.log('resetting',elem)
+            reset: function (/* ...props, elem */) {
+                var args = jaskell.toArray(arguments)
+                var ind = args.length - 1
+                if (args[ind].toString() === '[object HTMLCollection]') {
+                    var props = args.slice(0, ind)
+                    var elem = args[ind]
+                } else props = args
+                
                 var reset = function (elem) {
-                    elem.removeAttribute('style')
+                    console.log('resetting',props.join(', '))
+                    if (props) {
+                        for (var prop of props) {
+                            elem.style[prop] = ''
+                        }
+                    } else elem.removeAttribute('style')
                     return elem
                 }
                 return doEachIfElem(elem, reset)
@@ -371,9 +353,7 @@ jaskell.html = new function () {
                 }
                 return function sender(data) {
                     var req = new XMLHttpRequest()
-                    req.onload = function () {
-                        callback(req.responseText, req.status)
-                    }
+                    req.onload = () => callback(req.responseText, req.status)
                     req.open(method, url, true)
                     for (var prop in headers) {
                         req.setRequestHeader(prop, headers[prop])
@@ -385,9 +365,7 @@ jaskell.html = new function () {
                 create: function (method, url, callback) {
                     return function sender(data) {
                         var req = new XMLHttpRequest()
-                        req.onload = function () {
-                            callback(req.responseText, req.status)
-                        }
+                        req.onload = () => callback(req.responseText, req.status)
                         req.open(method, url, true)
                         req.setRequestHeader("Content-Type", "application/json")
                         req.send(JSON.stringify(data))
@@ -422,7 +400,13 @@ jaskell.debug = {
     },
     assert: {
         equal: function (expected, actual) {
-            if (expected !== actual) throw new Error('Expected',expected,'but got',actual)
+            var equal = function (actual) {
+                var message = 'Expected ' + expected + ' but got ' + actual
+                if (expected !== actual) throw new Error(message)
+                else return actual
+            }
+            if (actual === undefined) return equal
+            else return equal(actual)
         },
         contains: function (set, value) {
 
@@ -431,7 +415,11 @@ jaskell.debug = {
 
         },
         error: function (fn, ...inputs) {
-
+            try {
+                var result = fn(...inputs)
+                var message = 'Expected an exception, but got ' + result
+            } catch (exc) {}
+            if (message !== undefined) throw new Error(message)
         }
     }
 }
@@ -466,143 +454,138 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
  //---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
-jaskell.mixin(
-    jaskell,
-    jaskell.html, 
-    jaskell.debug,
-    function main(_) {
+jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
-        _.test(function createCustomEvent() {
-            var iterator = 0
-            _.event.create('test', true, true, function () {
-                return {date: new Date(), iteration: iterator++}
+    _.test(function createCustomEvent() {
+        var iterator = 0
+        _.event.create('test', true, true, function () {
+            return {date: new Date(), iteration: iterator++}
+        })
+    })
+
+    _.test(function testAppend() {
+        _.append('!', _.select.byId('test-pane'))
+    })
+
+    var append123 = null
+    _.test(function createAppend123Sequence() {
+        append123 = _.sequence(
+            _.select.byClass,
+            _.append('1'),
+            _.append('2'),
+            _.append('3'),
+            _.classes.add('neat'),
+            _.classes.remove('test0')
+        )
+    })
+
+    _.test(function removeThingFromTest1() {
+        _.classes.remove('thing', _.select.byClass('test1'))    
+    })
+    
+    _.test(function neatSequence() {
+        _.sequence(
+            _.select.byClass('neat'),
+            _.classes.remove('est'),
+            _.classes.add('woah','dude'),
+            _.event.capture('click', function (evt) {
+                evt.preventDefault()
+                _.using(evt.currentTarget, _.sequence(
+                    _.append('..'),
+                    _.append('?'),
+                    _.log('appending')
+                ))
+            }),
+            _.append('...'),
+            _.select.byClass('test5'),
+            _.append('???'),
+            _.event.capture('click', function () {
+                _.event.trigger('test', document.body)
             })
-        })
+        )
+    })
 
-        _.test(function testAppend() {
-            _.append('!', _.select.byId('test-pane'))
-        })
+    _.test(function captureTestEvent() {
+        _.event.capture('test', evt => console.log(evt.detail), document.body)
+    })
 
-        var append123 = null;
-        _.test(function createAppend123Sequence() {
-            append123 = _.sequence(
-                _.select.byClass,
-                _.append('1'),
-                _.append('2'),
-                _.append('3'),
-                _.classes.add('neat'),
-                _.classes.remove('test0')
-            )
-        })
+    _.test(function buttonSequence() {
+        _.sequence(
+            _.select.byTag('button'),
+            _.append(' Button'),
+            _.event.capture('click', function (evt) {
+                evt.preventDefault()
+                append123('test0')
 
-        _.test(function removeThingFromTest1() {
-            _.classes.remove('thing', _.select.byClass('test1'))    
-        })
-        
-        _.test(function neatSequence() {
-            _.sequence(
-                _.select.byClass('neat'),
-                _.classes.remove('est'),
-                _.classes.add('woah','dude'),
-                _.event.capture('click', function (evt) {
-                    evt.preventDefault()
-                    _.using(evt.currentTarget, _.sequence(
-                        _.append('..'),
-                        _.append('?'),
-                        _.log('appending')
-                    ))
-                }),
-                _.append('...'),
-                _.select.byClass('test5'),
-                _.append('???'),
-                _.event.capture('click', function () {
-                    _.event.trigger('test', document.body)
-                })
-            )
-        })
+                _.compose()
 
-        _.test(function captureTestEvent() {
-            _.event.capture('test', function (evt) {
-                console.log(evt.detail)
-            }, document.body)
-        })
+                _.style.animate.ease('color', '#fff', '#000', 5000,
+                    _.style.animate.ease('color', '#000', '#fff', 3000,
+                        _.style.reset('color')), _.select.byClass('neat'))
+            })
+        )
+    })
+    
+    _.test(function testSequence0() {
+        _.sequence(
+            ((a,b) => () => () => a + b)(10,20),
+            ((c,d) => (ab) => c + d + ab())(30,40),
+            _.assert.equal(100),
+            _.log('test sequence result')
+        )()
+    })
 
-        _.test(function buttonSequence() {
-            _.sequence(
-                _.select.byTag('button'),
-                _.append(' Button'),
-                _.event.capture('click', function (evt) {
-                    evt.preventDefault()
-                    append123('test0')
+    _.test(function testSequence1() {
+        _.assert.error(_.sequence(
+            ((a,b) => () => () => a + b)(10,20),
+            ((c,d) => (ab) => c + d + ab())(30,40),
+            _.assert.equal(110)
+        ))
+    })
 
-                    _.using(_.style.animate.ease, function (ease) {
-                        ease('color', '#fff', '#000', 5000,
-                            ease('color', '#000', '#fff', 3000,
-                                _.style.reset), _.select.byClass('neat'))
-                    })
-                })
-            )
-        })
-        
-        _.test(function result60() {
-            _.sequence(
-                (function (a,b) {
-                    return function () {
-                        return function () { return a + b }
-                    }
-                })(10,20),
-                (function(a,b) {
-                    return function (ab) {
-                        var result = a + b + ab()
-                        return result
-                    }
-                })(10,20)
-            )()
-        })
+    _.test(function testRequests() {
+        var url = '/sandbox/log'
+        var contentHeader = { "Content-Type": "application/json" }
+        var callback = function(response, status) {
+            console.log('Result is', response, 'with status', status)
+        }
+        var data = {test:'test'}
 
-        _.test(function testRequests() {
-            var url = '/sandbox/log'
-            var contentHeader = { "Content-Type": "application/json" }
-            var callback = function(response, status) {
-                console.log('Result is', response, 'with status', status)
-            }
-            var data = {test:'test'}
+        // All are equivalent
+        data.test = 'test1'
+        var sendReq1 = _.request.create('post', url, contentHeader, callback)
+        sendReq1(JSON.stringify(data))
 
-            // All are equivalent
-            data.test = 'test1'
-            var sendReq1 = _.request.create('post', url, contentHeader, callback)
-            sendReq1(JSON.stringify(data))
+        data.test = 'test2'
+        var sendReq2 = _.request.post(url, contentHeader, callback)
+        sendReq2(JSON.stringify(data))
 
-            data.test = 'test2'
-            var sendReq2 = _.request.post(url, contentHeader, callback)
-            sendReq2(JSON.stringify(data))
+        data.test = 'test3'
+        var sendReq3 = _.request.json.create('post', url, callback)
+        sendReq3(data)
 
-            data.test = 'test3'
-            var sendReq3 = _.request.json.create('post', url, callback)
-            sendReq3(data)
+        data.test = 'test4'
+        var sendReq4 = _.request.json.post(url, callback)
+        sendReq4(data)
+    })
 
-            data.test = 'test4'
-            var sendReq4 = _.request.json.post(url, callback)
-            sendReq4(data)
-        })
+    _.test(function testCss() {
+        _.style.css({
+            "background-color": "#123",
+            "border": "1px solid #666",
+            "border-radius": "5px",
+            "padding": "5px",
+            "margin": "5px"
+        }, _.select.byClass('test4'))
+    })
 
-        _.test(function testCss() {
-            _.style.css({
-                "background-color": "#123",
-                "border": "1px solid #666",
-                "border-radius": "5px",
-                "padding": "5px",
-                "margin": "5px"
-            }, _.select.byClass('test4'))
-        })
+    _.test(function testTransitions() {
+        _.event.capture('click', function() {
+            _.transition.easeInOut('scrollTop', 0, 500, _.select.byClass('sandbox-preview'))
+        }, _.select.byClass('test0'))
 
-        _.test(function testTransitions() {
-            _.event.capture('click', function() {
-                _.transition.easeInOut('scrollTop', 0, 500, _.select.byClass('sandbox-preview'))
-            }, _.select.byClass('test0'))
-
-            _.event.capture('click', function() {
-                _.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, _.select.byId('height-test'))
-            }, _.select.byClass('test1'))
-        })
+        _.event.capture('click', function() {
+            _.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, _.select.byId('height-test'))
+        }, _.select.byClass('test1'))
+    })
 })
