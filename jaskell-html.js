@@ -103,6 +103,17 @@ var jaskell = new function () {
         }
     }
 
+    _.nest = function () {
+        var fns = arguments,
+            len = arguments.length
+        var i = len
+        var args = _.toArray(arguments)
+        while ( --i >= 0 ) {
+            args = [fns[i].apply(this, args)]
+        }
+        return args[0]
+    }
+
     _.range = function (start, increment, end) {
         var array = []
         for (var i = start; i < end; i = i + increment) {
@@ -265,24 +276,29 @@ jaskell.html = new function () {
                         end = start
                         start = null
                     }
-                    if (!jaskell.isFunction(callback)) {
-                        elem = callback
+                    var checkCallback = function (callback, elem) {
+                        if (!jaskell.isFunction(callback)) {
+                            elem = callback
+                        }
+                        var animate = function (elem) {
+                            var durSec = duration / 1000
+                            if (start != null) elem.style[style] = start
+                            var easing = 'ease'
+                            if (jaskell.isArray(bezier)) easing = 'cubic-bezier(' + bezier.join(',') + ')'
+                            else if (bezier === 'linear') easing = 'linear'
+                            else if (bezier === 'ease-in') easing = 'ease-in'
+                            else if (bezier === 'ease-out') easing = 'ease-out'
+                            else if (bezier === 'ease-in-out') easing = 'ease-in-out'
+                            elem.style['transition'] = style + ' ' + durSec + 's ' + easing
+                            elem.style[style] = end
+                            if (jaskell.isFunction(callback))
+                                setTimeout(() => callback(elem), duration)
+                            return elem
+                        }
+                        return doEachIfElem(elem, animate)
                     }
-                    var animate = function (elem) {
-                        var durSec = duration / 1000
-                        if(start != null) elem.style[style] = start
-                        var easing = 'ease'
-                        if (jaskell.isArray(bezier)) easing = 'cubic-bezier(' + bezier.join(',') + ')'
-                        else if (bezier === 'linear') easing = 'linear'
-                        else if (bezier === 'ease-in') easing = 'ease-in'
-                        else if (bezier === 'ease-out') easing = 'ease-out'
-                        else if (bezier === 'ease-in-out') easing = 'ease-in-out'
-                        elem.style['transition'] = style + ' ' + durSec + 's ' + easing
-                        elem.style[style] = end
-                        setTimeout(() => callback(elem), duration)
-                        return elem
-                    }
-                    return doEachIfElem(elem, animate)
+                    if (callback !== undefined) return checkCallback(callback, elem)
+                    else return (callback, elem) => checkCallback(callback, elem)
                 }
             },
             reset: function (/* ...props, elem */) {
@@ -306,6 +322,14 @@ jaskell.html = new function () {
             }
         },
         event: {
+            prevent: function (event) {
+                event.preventDefault()
+                return event
+            },
+            stop: function (event) {
+                event.stopPropagation()
+                return event
+            },
             listen: function (type, handler, elem) {
                 var listen = function (elem) {
                     elem.addEventListener(type, handler, false)
@@ -470,7 +494,6 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
     var append123 = null
     _.test(function createAppend123Sequence() {
         append123 = _.sequence(
-            _.select.byClass,
             _.append('1'),
             _.append('2'),
             _.append('3'),
@@ -488,20 +511,17 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
             _.select.byClass('neat'),
             _.classes.remove('est'),
             _.classes.add('woah','dude'),
-            _.event.capture('click', function (evt) {
-                evt.preventDefault()
-                _.using(evt.currentTarget, _.sequence(
-                    _.append('..'),
-                    _.append('?'),
-                    _.log('appending')
-                ))
-            }),
+            _.event.capture('click', _.sequence(
+                _.event.prevent,
+                evt => evt.currentTarget,
+                _.append('..'),
+                _.append('?'),
+                _.log('appending')
+                )),
             _.append('...'),
             _.select.byClass('test5'),
             _.append('???'),
-            _.event.capture('click', function () {
-                _.event.trigger('test', document.body)
-            })
+            _.event.capture('click', () => _.event.trigger('test', document.body))
         )
     })
 
@@ -513,16 +533,17 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
         _.sequence(
             _.select.byTag('button'),
             _.append(' Button'),
-            _.event.capture('click', function (evt) {
-                evt.preventDefault()
-                append123('test0')
-
-                _.compose()
-
-                _.style.animate.ease('color', '#fff', '#000', 5000,
-                    _.style.animate.ease('color', '#000', '#fff', 3000,
-                        _.style.reset('color')), _.select.byClass('neat'))
-            })
+            _.event.capture('click', _.sequence(
+                _.event.prevent,
+                () => _.select.byClass('test0'),
+                append123,
+                () => _.select.byClass('neat'),
+                _.nest(
+                    _.style.animate.ease('color', '#fff', '#000', 5000),
+                    _.style.animate.ease('color', '#000', '#fff', 3000),
+                    () => _.style.reset('color') ) // TODO
+                )
+            )
         )
     })
     
@@ -543,12 +564,19 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
         ))
     })
 
+    _.test(function testComposition0() {
+        _.compose(
+            _.log('test composition result'),
+            _.assert.equal(100),
+            ((c,d) => (ab) => c + d + ab())(30,40),
+            ((a,b) => () => () => a + b)(10,20)
+        )()
+    })
+
     _.test(function testRequests() {
         var url = '/sandbox/log'
         var contentHeader = { "Content-Type": "application/json" }
-        var callback = function(response, status) {
-            console.log('Result is', response, 'with status', status)
-        }
+        var callback = (r,s) => console.log('Result is', r, 'with status', s)
         var data = {test:'test'}
 
         // All are equivalent
