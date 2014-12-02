@@ -1,11 +1,11 @@
 // TODO: Refactor to use private methods (should cut 25-50% of code)
 // TODO: Import other jaskell functions
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Core Jaskell Functions -----------------------------------------------------
 
 var jaskell = new function () {
-    
+
     Function.prototype.curry = function () {
         var f = this
         var a = _.toArray(arguments)
@@ -46,7 +46,7 @@ var jaskell = new function () {
         return operation.apply(this, names)
     }
 
-    _.import = function (context, ...names) {
+    _.include = function (context, ...names) {
         var propNames = []
         for (var name of names) {
             for (var prop in name) {
@@ -61,72 +61,167 @@ var jaskell = new function () {
     }
 
     _.mixin = function (/* ...names, operation */) {
-        var args = _.toArray(arguments)
-        var ind = args.length - 1
-        var names = args.slice(0, ind)
-        var operation = args[ind]
-        var lib = _.import({name:"mixin"}, ...names)
-        return operation(lib)
+        let args = _.toArray(arguments)
+        let names = args.slice(0, args.length - 1)
+        let operation = args[args.length - 1]
+        let mix = op => op(_.include({name:"mixin"}, ...names))
+        if (!_.isFunction(operation)) {
+            names = args
+            return mix
+        } else return mix(operation)
     }
 
-    _.sequence = function (/* ...operations */) {
-        var fns = arguments,
-            l = arguments.length
-        var seq = function () {
-            var i = -1
-            var args = _.toArray(arguments)
-            while (i++ < l - 1) {
-                if (!_.isFunction(fns[i])) {
-                    var val = fns[i]
-                    fns[i] = function () {
-                        return val
-                    }
-                }
-                args = [fns[i].apply(this, args)]
+    _.sequence = function (...fns) {
+        if (!_.isFunction(fns[0])) var returnNow = true
+        let i = -1
+        while (++i < fns.length) {
+            if (!_.isFunction(fns[i])) {
+                let val = fns[i]
+                fns[i] = () => val
             }
-            return args[0]
         }
-        if (!_.isFunction(fns[0])) return seq()
-        else return seq
+        let sequence = function () {
+            let i = -1
+            let args = _.toArray(arguments)
+            while (++i < fns.length) args = [fns[i].apply(this, args)]
+            return args.length === 1 ? args[0] : args
+        }
+        if (returnNow) return sequence()
+        else return sequence
     }
 
-    _.compose = function () {
-        var fns = arguments,
-            len = arguments.length
-        return function () {
-            var i = len
-            var args = _.toArray(arguments)
-            while ( --i >= 0 ) {
-                args = [fns[i].apply(this, args)]
+    _.compose = function (...fns) {
+        if (!_.isFunction(fns[0])) var returnNow = true
+        let i = fns.length
+        while (i-- > 0) {
+            if (!_.isFunction(fns[i])) {
+                let val = fns[i]
+                fns[i] = () => val
             }
-            return args[0]
         }
+        let compose = function () {
+            let i = fns.length
+            let args = _.toArray(arguments)
+            while (i-- > 0) args = [fns[i].apply(this, args)]
+            return args.length === 1 ? args[0] : args
+        }
+        if (returnNow) return compose()
+        else return compose
     }
 
-    _.nest = function () {
-        var fns = arguments,
-            len = arguments.length
-        var i = len
-        var args = _.toArray(arguments)
-        while ( --i >= 0 ) {
-            args = [fns[i].apply(this, args)]
-        }
-        return args[0]
+    // The functions should accept just a callback and return a function that accepts a target
+    // Ideally, the functions should also accept a callback and target simultaneously
+    _.nest = function (...fns) {
+        let i = fns.length - 1
+        let args = [fns[fns.length - 1]]
+        while (i-- > 0) args = [fns[i].apply(this, args)]
+        return args.length === 1 ? args[0] : args
     }
 
-    _.range = function (start, increment, end) {
-        var array = []
-        for (var i = start; i < end; i = i + increment) {
-            array.push(i)
+    function LazyRange(first, second) {
+        this.first = first
+        this.second = second
+    }
+    LazyRange.prototype.__iterator__ = function() {
+        for (var i = this.first; i < 1000; i += this.second) yield i
+    }
+    LazyRange.prototype.take = function (amount) {
+        let array = [], i = -1
+        for (let n in this) {
+            if (++i > amount) break
+            array.push(n)
         }
         return array
+    }
+    LazyRange.prototype.takeTill = function (maximum) {
+        let array = []
+        for (let n in this) {
+            if (n > maximum) break
+            else array.push(n)
+        }
+        return array
+    }
+    _.lazyRange = LazyRange
+
+    // Examples
+    // (1,1,10), (`1,2..10`), (1,10), (`1..10`), (10), (`..10`) == [1,2,3,4,5,6,7,8,9,10]
+    // (1,1,Infinity), (`1,2..`), (1,Infinity), (`1..`) -> infinite list from 1 to n
+    // (Infinity), (`..`) -> infinite list from 0 to n
+    _.range = function (start, step, end) {
+        /*if (start.length) {
+         // TODO, remove whitespace
+         [start, end] = start.split('..')
+         if (end === undefined) throw new Error('Expecting a \'..\' in expression.')
+         if (start === '') {
+         start = 0
+         let frags = end.split(',')
+         if (!frags.length || frags.length > 2) throw new Error()
+         if (frags.length === 1) {
+         step = 1
+         end = Number(frags[0])
+         } else {
+         end = Number(frags[1])
+         let secondToLast = Number(frags[0])
+         if (Math.abs(secondToLast) > Math.abs(end)) throw new Error()
+         step = end - secondToLast
+         }
+         } else if (end === '') {
+         let frags = start.split(',')
+         if (!frags.length || frags.length > 2) throw new Error()
+         if (frags.length === 1) {
+         start = Number(frags[0])
+         step = 1
+         end = Infinity
+         if (start < 0) {
+         step *= -1
+         end *= -1
+         }
+         } else {
+         start = Number(frags[1])
+         let second = Number(frags[0])
+         step = second - start
+         end = second > start ? Infinity : -Infinity
+         }
+         } else {
+         let frags = start.split(',')
+         if (frags.length > 1) {
+         start = Number(frags[0])
+         let second = Number(frags[1])
+         step = second - start
+         end = Number(end)
+         } else {
+         frags = end.split(',')
+         if (frags.length > 1) {
+         start = Number(frags[0])
+         let second = Number(frags[1])
+         step = second - start
+         end = Number(end)
+         } else {
+         start = Number(start)
+         end = Number(end)
+         step = end > start ? 1 : -1
+         }
+         }
+         }
+         }*/
+        if (end === undefined) {
+            if (step !== undefined) end = step, step = start < step ? 1 : -1
+            else end = start, step = start < 0 ? -1 : 1, start = 0
+        }
+        var array = []
+        if (isFinite(end)) {
+            for (let i = start; i < end; i = i + step) array.push(i)
+            return array
+        } else {
+            return _.lazyRange(start,step)
+        }
     }
 
     return _
 }
 
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Jaskell Html ---------------------------------------------------------------
 
 jaskell.html = new function () {
@@ -308,7 +403,7 @@ jaskell.html = new function () {
                     var props = args.slice(0, ind)
                     var elem = args[ind]
                 } else props = args
-                
+
                 var reset = function (elem) {
                     console.log('resetting',props.join(', '))
                     if (props) {
@@ -409,17 +504,19 @@ jaskell.html = new function () {
     return _
 }
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Development & Testing Helpers ----------------------------------------------
 
 jaskell.debug = {
     test: function (fn) {
         try {
             fn()
-            console.info('Success:', fn.name)
+            let message = fn.name ? 'Success: ' + fn.name : 'Success'
+            console.info(message)
         } catch (exception) {
-            console.info('Failure:', fn.name + '. Exception is:')
-            console.error(exception)
+            console.error('Failure:', fn.name, '. Exception is:')
+            console.error(exception.message)
+            console.error(exception.stack)
         }
     },
     assert: {
@@ -449,7 +546,7 @@ jaskell.debug = {
 }
 
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Ehancements & Shortcuts ----------------------------------------------------
 
 jaskell.using(jaskell.html.transition, function write(_) {
@@ -475,15 +572,15 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 })
 
 
- //---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
 jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
     _.test(function createCustomEvent() {
-        var iterator = 0
+        let i = 0
         _.event.create('test', true, true, function () {
-            return {date: new Date(), iteration: iterator++}
+            return {date: new Date(), iteration: i++}
         })
     })
 
@@ -494,33 +591,30 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
     var append123 = null
     _.test(function createAppend123Sequence() {
         append123 = _.sequence(
-            _.append('1'),
-            _.append('2'),
-            _.append('3'),
+            _.append('123'),
             _.classes.add('neat'),
             _.classes.remove('test0')
         )
     })
 
     _.test(function removeThingFromTest1() {
-        _.classes.remove('thing', _.select.byClass('test1'))    
+        _.classes.remove('thing', _.select.byClass('test1'))
     })
-    
+
     _.test(function neatSequence() {
+        let j = 0
         _.sequence(
             _.select.byClass('neat'),
             _.classes.remove('est'),
             _.classes.add('woah','dude'),
             _.event.capture('click', _.sequence(
                 _.event.prevent,
-                evt => evt.currentTarget,
-                _.append('..'),
-                _.append('?'),
-                _.log('appending')
-                )),
-            _.append('...'),
+                    evt => evt.currentTarget,
+                _.append(j++)
+            )),
+            _.append(' oh wow '),
             _.select.byClass('test5'),
-            _.append('???'),
+            _.append(' select in the middle of a sequence'),
             _.event.capture('click', () => _.event.trigger('test', document.body))
         )
     })
@@ -535,26 +629,23 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
             _.append(' Button'),
             _.event.capture('click', _.sequence(
                 _.event.prevent,
-                () => _.select.byClass('test0'),
+                _.select.byClass('test0'),
                 append123,
-                () => _.select.byClass('neat'),
+                _.select.byClass('neat'),
                 _.nest(
                     _.style.animate.ease('color', '#fff', '#000', 5000),
                     _.style.animate.ease('color', '#000', '#fff', 3000),
-                    () => _.style.reset('color') ) // TODO
-                )
-            )
+                    _.style.reset('color', 'transition') )
+            ))
         )
     })
-    
-    _.test(function testSequence0() {
-        _.sequence(
-            ((a,b) => () => () => a + b)(10,20),
-            ((c,d) => (ab) => c + d + ab())(30,40),
-            _.assert.equal(100),
-            _.log('test sequence result')
-        )()
-    })
+
+    _.test(_.sequence(
+        ((a,b) => () => () => a + b)(10,20),
+        ((c,d) => (ab) => c + d + ab())(30,40),
+        _.assert.equal(100),
+        _.log('test sequence result')
+    ))
 
     _.test(function testSequence1() {
         _.assert.error(_.sequence(
@@ -564,35 +655,28 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
         ))
     })
 
-    _.test(function testComposition0() {
-        _.compose(
-            _.log('test composition result'),
-            _.assert.equal(100),
-            ((c,d) => (ab) => c + d + ab())(30,40),
-            ((a,b) => () => () => a + b)(10,20)
-        )()
-    })
+    _.test(_.compose(
+        _.log('test composition result'),
+        _.assert.equal(100),
+        ((c,d) => (ab) => c + d + ab())(30,40),
+        ((a,b) => () => () => a + b)(10,20)
+    ))
 
     _.test(function testRequests() {
         var url = '/sandbox/log'
         var contentHeader = { "Content-Type": "application/json" }
-        var callback = (r,s) => console.log('Result is', r, 'with status', s)
         var data = {test:'test'}
+        var callback = (r,s) => _.test(() => _.assert.equal(JSON.stringify(data),r) && _.assert.equal(200,s))
 
-        // All are equivalent
-        data.test = 'test1'
         var sendReq1 = _.request.create('post', url, contentHeader, callback)
         sendReq1(JSON.stringify(data))
 
-        data.test = 'test2'
         var sendReq2 = _.request.post(url, contentHeader, callback)
         sendReq2(JSON.stringify(data))
 
-        data.test = 'test3'
         var sendReq3 = _.request.json.create('post', url, callback)
         sendReq3(data)
 
-        data.test = 'test4'
         var sendReq4 = _.request.json.post(url, callback)
         sendReq4(data)
     })
@@ -615,5 +699,46 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
         _.event.capture('click', function() {
             _.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, _.select.byId('height-test'))
         }, _.select.byClass('test1'))
+    })
+
+    _.test(function testFibonacci() {
+        function* fibonacci() {
+            let [prev, curr] = [0, 1];
+            for (;;) {
+                [prev, curr] = [curr, prev + curr];
+                yield curr;
+            }
+        }
+
+        for (let n of fibonacci()) {
+            // truncate the sequence at 1000
+            if (n > 1000)
+                break;
+            console.log(n);
+        }
+    })
+
+    _.test(function testLazyRange() {
+        let evens = new _.lazyRange(0,2)
+        for (let n in evens) {
+            console.log(n)
+            if (isNaN(n)) break
+            if (n > 50) break
+            if (n.value && n.value > 50) break
+        }
+
+        console.log('start',evens.first)
+
+        _.test(function take() {
+            console.log(evens.take(10))
+        })
+
+        //console.log(evens.next())
+
+        _.test(function takeTill() {
+            console.log(evens.takeTill(50))
+        })
+
+        console.log('done')
     })
 })
