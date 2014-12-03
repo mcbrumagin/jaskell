@@ -38,8 +38,7 @@ var jaskell = new function () {
         } else return fn(objs)
     }
 
-    _.using = function (/* ...names, operation */) {
-        var args = _.toArray(arguments)
+    _.using = function (...args /* ...names, operation */) {
         var ind = args.length - 1
         var names = args.slice(0, ind)
         var operation = args[ind]
@@ -60,8 +59,7 @@ var jaskell = new function () {
         return context
     }
 
-    _.mixin = function (/* ...names, operation */) {
-        let args = _.toArray(arguments)
+    _.mixin = function (...args /* ...names, operation */) {
         let names = args.slice(0, args.length - 1)
         let operation = args[args.length - 1]
         let mix = op => op(_.include({name:"mixin"}, ...names))
@@ -72,7 +70,6 @@ var jaskell = new function () {
     }
 
     _.sequence = function (...fns) {
-        if (!_.isFunction(fns[0])) var returnNow = true
         let i = -1
         while (++i < fns.length) {
             if (!_.isFunction(fns[i])) {
@@ -80,14 +77,12 @@ var jaskell = new function () {
                 fns[i] = () => val
             }
         }
-        let sequence = function () {
+        let sequence = function (...args) {
             let i = -1
-            let args = _.toArray(arguments)
             while (++i < fns.length) args = [fns[i].apply(this, args)]
             return args.length === 1 ? args[0] : args
         }
-        if (returnNow) return sequence()
-        else return sequence
+        return sequence
     }
 
     _.compose = function (...fns) {
@@ -99,9 +94,8 @@ var jaskell = new function () {
                 fns[i] = () => val
             }
         }
-        let compose = function () {
+        let compose = function (...args) {
             let i = fns.length
-            let args = _.toArray(arguments)
             while (i-- > 0) args = [fns[i].apply(this, args)]
             return args.length === 1 ? args[0] : args
         }
@@ -128,7 +122,7 @@ var jaskell = new function () {
     LazyRange.prototype.take = function (amount) {
         let array = [], i = -1
         for (let n in this) {
-            if (++i > amount) break
+            if (++i >= amount) break
             array.push(n)
         }
         return array
@@ -136,8 +130,16 @@ var jaskell = new function () {
     LazyRange.prototype.takeTill = function (maximum) {
         let array = []
         for (let n in this) {
-            if (n > maximum) break
+            if (n >= maximum) break
             else array.push(n)
+        }
+        return array
+    }
+    LazyRange.prototype.takeThrough = function (maximum) {
+        let array = []
+        for (let n in this) {
+            array.push(n)
+            if (n >= maximum) break
         }
         return array
     }
@@ -242,16 +244,22 @@ jaskell.html = new function () {
         var curveDerivativeX = t => (3.0 * ax * t + 2.0 * bx) * t + cx
 
         // Given an x value, find a parametric value it came from
-        var solveCurveX = function (x, epsilon) {
+        //var mult = Math.EPSILON // TODO: Pending browser support
+        var mult = 0.000000001
+        var solveCurveX = function (x, grain) {
 
             // First try Newton's method
+            // TODO: Dynamically choose iterations based on performance and grain
             for (var t2 = x, i = 0; i < 4; i++) {
                 var x2 = curveX(t2) - x
-                if (Math.abs(x2) < epsilon) return t2
+                if (Math.abs(x2) < grain * mult) return t2
                 var d2 = curveDerivativeX(t2)
                 if (Math.abs(d2) < 1e-6) break
                 t2 = t2 - x2 / d2
             }
+
+            // Newton's failed, double the grain to prevent failures
+            mult *= 2
 
             // Fall back to the bisection method
             if (x < 0) return 0
@@ -285,8 +293,7 @@ jaskell.html = new function () {
             return doEachIfElem(elem, append)
         },
         classes: {
-            add: function (/* ...vals, elem */) {
-                var args = jaskell.toArray(arguments)
+            add: function (...args /* ...vals, elem */) {
                 var ind = args.length - 1
                 if (args[ind].toString() === '[object HTMLCollection]') {
                     var vals = args.slice(0, ind)
@@ -301,8 +308,7 @@ jaskell.html = new function () {
                 }
                 return doEachIfElem(elem, add)
             },
-            remove: function (/* ...vals, elem */) {
-                var args = jaskell.toArray(arguments)
+            remove: function (...args /* ...vals, elem */) {
                 var ind = args.length - 1
                 if (args[ind].toString() === '[object HTMLCollection]') {
                     var vals = args.slice(0, ind)
@@ -339,7 +345,7 @@ jaskell.html = new function () {
                         if (elapsed > duration) {
                             elem[prop] = end
                         } else {
-                            var solution = bezier(elapsed / duration, .001)
+                            var solution = bezier(elapsed / duration, 100)
                             var result = Math.round(solution * (end - start) + start)
                             // Do not force the browser to handle unnecessary assignments
                             if (elem[prop] != result) elem[prop] = result
@@ -396,8 +402,7 @@ jaskell.html = new function () {
                     else return (callback, elem) => checkCallback(callback, elem)
                 }
             },
-            reset: function (/* ...props, elem */) {
-                var args = jaskell.toArray(arguments)
+            reset: function (...args /* ...props, elem */) {
                 var ind = args.length - 1
                 if (args[ind].toString() === '[object HTMLCollection]') {
                     var props = args.slice(0, ind)
@@ -443,7 +448,7 @@ jaskell.html = new function () {
             },
             list: {},
             create: function (name, bubbles, cancelable, detail) {
-                var options = {}
+                let options = {}
                 options.bubbles = bubbles === undefined ? true : bubbles
                 options.cancelable = cancelable === undefined ? true : cancelable
                 _.event.list[name] = function () {
@@ -507,42 +512,80 @@ jaskell.html = new function () {
 //---------------------------------------------------------------------------
 // Development & Testing Helpers ----------------------------------------------
 
-jaskell.debug = {
-    test: function (fn) {
+jaskell.debug = new function () {
+
+    let _ = {}
+    _.test = {}
+    _.test.suite = function (name, ...cases) {
+        let successful = 0
+        let failed = 0
+        for (let fn of cases) {
+            let result = fn()
+            result.success ? successful++ : failed++
+        }
+        let total = successful + failed
+        /*console.info(`Test suite ${name} complete. Results are:
+         Total: ${total}`)
+         console.log(`Successful: ${successful}`)
+         console.error(`Failed: ${failed}`)*/
+        console.info('Test suite: ' + name + ' is complete.\n Total test cases: ' + total)
+        if (failed > 0) {
+            console.log('Successful: ' + successful)
+            console.warn('Failed: ' + failed)
+        } else console.log('All tests passed!')
+    }
+
+    _.test.run = function (fn) {
+        const stepFailed = 'Test step failed.'
+        // TODO: Result object with step prototype
+        let result = new function () {
+            this.success = true
+            this.output = null
+            this.step = function () {
+                if(!this.success) throw new Error(stepFailed)
+            }
+        }
         try {
-            fn()
+            result.output = fn()
             let message = fn.name ? 'Success: ' + fn.name : 'Success'
             console.info(message)
+            return result
         } catch (exception) {
-            console.error('Failure:', fn.name, '. Exception is:')
-            console.error(exception.message)
-            console.error(exception.stack)
-        }
-    },
-    assert: {
-        equal: function (expected, actual) {
-            var equal = function (actual) {
-                var message = 'Expected ' + expected + ' but got ' + actual
-                if (expected !== actual) throw new Error(message)
-                else return actual
-            }
-            if (actual === undefined) return equal
-            else return equal(actual)
-        },
-        contains: function (set, value) {
-
-        },
-        empty: function (object) {
-
-        },
-        error: function (fn, ...inputs) {
-            try {
-                var result = fn(...inputs)
-                var message = 'Expected an exception, but got ' + result
-            } catch (exc) {}
-            if (message !== undefined) throw new Error(message)
+            if (exception.message === stepFailed) exception.stack = ''
+            let message = 'Failure: ' + fn.name + ' Exception is:\n'
+                + exception.message + '\n' + exception.stack
+            console.error(message)
+            result.success = false
+            return result
         }
     }
+
+    _.test.case = fn => () => jaskell.debug.test.run(fn)
+
+    _.assert = {}
+    _.assert.equal = function (expected, actual) {
+        var equal = function (actual) {
+            var message = 'Expected ' + expected + ' but got ' + actual
+            if (JSON.stringify(expected) !== JSON.stringify(actual))
+                throw new Error(message)
+            else return actual
+        }
+        if (actual === undefined) return equal
+        else return equal(actual)
+    }
+
+    _.assert.error = function (fn, ...inputs) {
+        try {
+            var result = fn(...inputs)
+            var message = 'Expected an exception, but got ' + result
+        } catch (exc) {}
+        if (message !== undefined) throw new Error(message)
+    }
+
+    _.assert.contains = function (set, value) {}
+    _.assert.empty = function (object) {}
+
+    return _
 }
 
 
@@ -577,168 +620,163 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 
 jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
-    _.test(function createCustomEvent() {
-        let i = 0
-        _.event.create('test', true, true, function () {
-            return {date: new Date(), iteration: i++}
-        })
-    })
-
-    _.test(function testAppend() {
-        _.append('!', _.select.byId('test-pane'))
-    })
-
     var append123 = null
-    _.test(function createAppend123Sequence() {
-        append123 = _.sequence(
-            _.append('123'),
-            _.classes.add('neat'),
-            _.classes.remove('test0')
-        )
-    })
-
-    _.test(function removeThingFromTest1() {
-        _.classes.remove('thing', _.select.byClass('test1'))
-    })
-
-    _.test(function neatSequence() {
-        let j = 0
-        _.sequence(
-            _.select.byClass('neat'),
-            _.classes.remove('est'),
-            _.classes.add('woah','dude'),
-            _.event.capture('click', _.sequence(
-                _.event.prevent,
-                    evt => evt.currentTarget,
-                _.append(j++)
-            )),
-            _.append(' oh wow '),
-            _.select.byClass('test5'),
-            _.append(' select in the middle of a sequence'),
-            _.event.capture('click', () => _.event.trigger('test', document.body))
-        )
-    })
-
-    _.test(function captureTestEvent() {
-        _.event.capture('test', evt => console.log(evt.detail), document.body)
-    })
-
-    _.test(function buttonSequence() {
-        _.sequence(
-            _.select.byTag('button'),
-            _.append(' Button'),
-            _.event.capture('click', _.sequence(
-                _.event.prevent,
-                _.select.byClass('test0'),
-                append123,
+    _.test.suite('Main',
+        _.test.case(function createCustomEvent() {
+            let i = 0
+            _.event.create('test', true, true, function () {
+                return {date: new Date(), iteration: i++}
+            })
+        }),
+        _.test.case(function testAppend() {
+            _.append('!', _.select.byId('test-pane'))
+        }),
+        _.test.case(function createAppend123Sequence() {
+            append123 = _.sequence(
+                _.append('123'),
+                _.classes.add('neat'),
+                _.classes.remove('test0')
+            )
+        }),
+        _.test.case(function removeThingFromTest1() {
+            _.classes.remove('thing', _.select.byClass('test1'))
+        }),
+        _.test.case(function neatSequence() {
+            let j = 0
+            _.sequence(
                 _.select.byClass('neat'),
-                _.nest(
-                    _.style.animate.ease('color', '#fff', '#000', 5000),
-                    _.style.animate.ease('color', '#000', '#fff', 3000),
-                    _.style.reset('color', 'transition') )
-            ))
-        )
-    })
-
-    _.test(_.sequence(
-        ((a,b) => () => () => a + b)(10,20),
-        ((c,d) => (ab) => c + d + ab())(30,40),
-        _.assert.equal(100),
-        _.log('test sequence result')
-    ))
-
-    _.test(function testSequence1() {
-        _.assert.error(_.sequence(
+                _.classes.remove('est'),
+                _.classes.add('woah','dude'),
+                _.event.capture('click', _.sequence(
+                    _.event.prevent,
+                    evt => evt.currentTarget,
+                    _.append(j++) // TODO: Try binding, or create custom runBefore function?
+                )),
+                _.append(' oh wow '),
+                _.select.byClass('test5'),
+                _.append(' select in the middle of a sequence'),
+                _.event.capture('click', () => _.event.trigger('test', document.body))
+            )
+        }),
+        _.test.case(function captureTestEvent() {
+            _.event.capture('test', evt => console.log(evt.detail), document.body)
+        }),
+        _.test.case(function buttonSequence() {
+            _.sequence(
+                _.select.byTag('button'),
+                _.append(' Button'),
+                _.event.capture('click', _.sequence(
+                    _.event.prevent,
+                    _.select.byClass('test0'),
+                    append123,
+                    _.select.byClass('neat'),
+                    _.nest(
+                        _.style.animate.ease('color', '#fff', '#000', 5000),
+                        _.style.animate.ease('color', '#000', '#fff', 3000),
+                        _.style.reset('color', 'transition') )
+                ))
+            )
+        }),
+        _.test.case(_.sequence(
             ((a,b) => () => () => a + b)(10,20),
             ((c,d) => (ab) => c + d + ab())(30,40),
-            _.assert.equal(110)
-        ))
-    })
+            _.assert.equal(100),
+            _.log('test sequence result')
+        )),
+        _.test.case(function testSequence1() {
+            _.assert.error(_.sequence(
+                ((a,b) => () => () => a + b)(10,20),
+                ((c,d) => (ab) => c + d + ab())(30,40),
+                _.assert.equal(110)
+            ))
+        }),
+        _.test.case(_.compose(
+            _.log('test composition result'),
+            _.assert.equal(100),
+            ((c,d) => (ab) => c + d + ab())(30,40),
+            ((a,b) => () => () => a + b)(10,20)
+        )),
+        _.test.case(function testRequests() {
+            let url = '/sandbox/log'
+            let contentHeader = { "Content-Type": "application/json" }
+            let data = {test:'test'}
+            let callback = (r,s) => _.test.case(() => _.assert.equal(JSON.stringify(data),r) && _.assert.equal(200,s))
 
-    _.test(_.compose(
-        _.log('test composition result'),
-        _.assert.equal(100),
-        ((c,d) => (ab) => c + d + ab())(30,40),
-        ((a,b) => () => () => a + b)(10,20)
-    ))
+            let sendReq1 = _.request.create('post', url, contentHeader, callback)
+            sendReq1(JSON.stringify(data))
 
-    _.test(function testRequests() {
-        var url = '/sandbox/log'
-        var contentHeader = { "Content-Type": "application/json" }
-        var data = {test:'test'}
-        var callback = (r,s) => _.test(() => _.assert.equal(JSON.stringify(data),r) && _.assert.equal(200,s))
+            let sendReq2 = _.request.post(url, contentHeader, callback)
+            sendReq2(JSON.stringify(data))
 
-        var sendReq1 = _.request.create('post', url, contentHeader, callback)
-        sendReq1(JSON.stringify(data))
+            let sendReq3 = _.request.json.create('post', url, callback)
+            sendReq3(data)
 
-        var sendReq2 = _.request.post(url, contentHeader, callback)
-        sendReq2(JSON.stringify(data))
+            let sendReq4 = _.request.json.post(url, callback)
+            sendReq4(data) // TODO: Create function to receive json from callback
+        }),
+        _.test.case(function testCss() {
+            _.style.css({
+                backgroundColor: "#123",
+                border: "1px solid #666",
+                borderRadius: "5px",
+                padding: "5px",
+                margin: "5px"
+            }, _.select.byClass('test4'))
+        }),
+        _.test.case(function testTransitions() {
+            _.event.capture('click', function() {
+                _.transition.easeInOut('scrollTop', 0, 500, _.select.byClass('sandbox-preview'))
+            }, _.select.byClass('test0'))
 
-        var sendReq3 = _.request.json.create('post', url, callback)
-        sendReq3(data)
-
-        var sendReq4 = _.request.json.post(url, callback)
-        sendReq4(data)
-    })
-
-    _.test(function testCss() {
-        _.style.css({
-            "background-color": "#123",
-            "border": "1px solid #666",
-            "border-radius": "5px",
-            "padding": "5px",
-            "margin": "5px"
-        }, _.select.byClass('test4'))
-    })
-
-    _.test(function testTransitions() {
-        _.event.capture('click', function() {
-            _.transition.easeInOut('scrollTop', 0, 500, _.select.byClass('sandbox-preview'))
-        }, _.select.byClass('test0'))
-
-        _.event.capture('click', function() {
-            _.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, _.select.byId('height-test'))
-        }, _.select.byClass('test1'))
-    })
-
-    _.test(function testFibonacci() {
-        function* fibonacci() {
-            let [prev, curr] = [0, 1];
-            for (;;) {
-                [prev, curr] = [curr, prev + curr];
-                yield curr;
+            _.event.capture('click', function() {
+                _.transition.bezier([0.42, -0.1, 0.58, 1.1], 'offsetHeight', 500, 2000, _.select.byId('height-test'))
+            }, _.select.byClass('test1'))
+        }),
+        _.test.case(function testFibonacci() {
+            function* fibonacci() {
+                let [prev, curr] = [0, 1];
+                for (;;) {
+                    [prev, curr] = [curr, prev + curr];
+                    yield curr;
+                }
             }
-        }
 
-        for (let n of fibonacci()) {
-            // truncate the sequence at 1000
-            if (n > 1000)
-                break;
-            console.log(n);
-        }
-    })
+            for (let n of fibonacci()) {
+                // truncate the sequence at 1000
+                if (n > 1000)
+                    break;
+                console.log(n);
+            }
+        }),
+        _.test.case(function testLazyRange() {
+            let evens = new _.lazyRange(0,2)
+            for (let n in evens) {
+                console.log(n)
+                if (isNaN(n)) break
+                if (n > 50) break
+                if (n.value && n.value > 50) break
+            }
 
-    _.test(function testLazyRange() {
-        let evens = new _.lazyRange(0,2)
-        for (let n in evens) {
-            console.log(n)
-            if (isNaN(n)) break
-            if (n > 50) break
-            if (n.value && n.value > 50) break
-        }
+            console.log('start',evens.first)
 
-        console.log('start',evens.first)
+            _.test.run(_.sequence(
+                evens.take(5),
+                _.assert.equal([0,2,4,6,8])
+            )).step()
 
-        _.test(function take() {
-            console.log(evens.take(10))
+            //console.log(evens.next())
+
+            _.test.run(_.sequence(
+                evens.takeTill(10),
+                _.assert.equal([0,2,4,6,8])
+            )).step()
+
+            _.test.run(_.sequence(
+                evens.takeThrough(10),
+                _.assert.equal([0,2,4,6,8,10])
+            )).step()
+
+            console.log('done')
         })
-
-        //console.log(evens.next())
-
-        _.test(function takeTill() {
-            console.log(evens.takeTill(50))
-        })
-
-        console.log('done')
-    })
+    )
 })
