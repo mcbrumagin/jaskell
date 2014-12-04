@@ -150,72 +150,78 @@ var jaskell = new function () {
     // (1,1,Infinity), (`1,2..`), (1,Infinity), (`1..`) -> infinite list from 1 to n
     // (Infinity), (`..`) -> infinite list from 0 to n
     _.range = function (start, step, end) {
-        /*if (start.length) {
-         // TODO, remove whitespace
-         [start, end] = start.split('..')
-         if (end === undefined) throw new Error('Expecting a \'..\' in expression.')
-         if (start === '') {
-         start = 0
-         let frags = end.split(',')
-         if (!frags.length || frags.length > 2) throw new Error()
-         if (frags.length === 1) {
-         step = 1
-         end = Number(frags[0])
-         } else {
-         end = Number(frags[1])
-         let secondToLast = Number(frags[0])
-         if (Math.abs(secondToLast) > Math.abs(end)) throw new Error()
-         step = end - secondToLast
-         }
-         } else if (end === '') {
-         let frags = start.split(',')
-         if (!frags.length || frags.length > 2) throw new Error()
-         if (frags.length === 1) {
-         start = Number(frags[0])
-         step = 1
-         end = Infinity
-         if (start < 0) {
-         step *= -1
-         end *= -1
-         }
-         } else {
-         start = Number(frags[1])
-         let second = Number(frags[0])
-         step = second - start
-         end = second > start ? Infinity : -Infinity
-         }
-         } else {
-         let frags = start.split(',')
-         if (frags.length > 1) {
-         start = Number(frags[0])
-         let second = Number(frags[1])
-         step = second - start
-         end = Number(end)
-         } else {
-         frags = end.split(',')
-         if (frags.length > 1) {
-         start = Number(frags[0])
-         let second = Number(frags[1])
-         step = second - start
-         end = Number(end)
-         } else {
-         start = Number(start)
-         end = Number(end)
-         step = end > start ? 1 : -1
-         }
-         }
-         }
-         }*/
+        if (start.length) {
+            // TODO, remove whitespace
+            [startString, endString] = start.split('..')
+            let startFrags = startString.split(',')
+            let endFrags = endString.split(',')
+            if (endString === undefined) throw new Error('Expecting a \'..\' in expression.')
+            if (startString === '') { // ..10, ..9,10, TODO: '..' -> lazyRange from 0 to Infinity
+                start = 0
+                if (!endFrags.length || endFrags.length > 2) throw new Error()
+                if (endFrags.length === 1) { // ..10
+                    step = 1
+                    end = Number(endFrags[0])
+                } else { // ..9,10
+                    end = Number(endFrags[1])
+                    let secondToLast = Number(endFrags[0])
+                    if (Math.abs(secondToLast) > Math.abs(end)) throw new Error()
+                    step = end - secondToLast
+                }
+            } else if (endString === '') { // 1.., 1,2.., ..
+                if (!startFrags.length || startFrags.length > 2) throw new Error()
+                if (startFrags.length === 1) { // 1..
+                    start = Number(startFrags[0])
+                    step = 1
+                    end = Infinity
+                    if (start < 0) {
+                        step *= -1
+                        end *= -1
+                    }
+                } else { // 1,2..
+                    start = Number(startFrags[0])
+                    let second = Number(startFrags[1])
+                    step = second - start
+                    end = second > start ? Infinity : -Infinity
+                    console.log('Lazy Range:',start, step, end)
+                }
+            } else { // 1..10, 1,2..10, 1..9,10
+                if (startFrags.length === 1 && endFrags.length === 1) { // 1..10
+                    start = Number(startFrags[0])
+                    step = 1
+                    end = Number(endFrags[0])
+                } else if (startFrags.length > 1 && endFrags.length === 1) { // 1,2..10
+                    start = Number(startFrags[0])
+                    step = Number(startFrags[1]) - start
+                    end = Number(endFrags[0])
+                } else if (startFrags.length === 1 && endFrags.length > 1) { // 1..9,10
+                    start = Number(startFrags[0])
+                    end = Number(endFrags[1])
+                    step = end - Number(endFrags[0])
+                } else {
+                    throw new Error()
+                }
+            }
+        }
+        if (step == '..') {
+            step = 1
+            end = Infinity
+        }
+        if (end == '..') {
+            end = Infinity * (step >= 0 ? 1 : -1)
+            console.log('End..?',end)
+        }
         if (end === undefined) {
             if (step !== undefined) end = step, step = start < step ? 1 : -1
             else end = start, step = start < 0 ? -1 : 1, start = 0
         }
-        var array = []
+        console.log('Range:',start, step, end)
         if (isFinite(end)) {
-            for (let i = start; i < end; i = i + step) array.push(i)
+            let array = []
+            for (let i = start; i <= end; i = i + step) array.push(i)
             return array
         } else {
-            return _.lazyRange(start,step)
+            return new _.lazyRange(start,step)
         }
     }
 
@@ -618,6 +624,8 @@ jaskell.each([jaskell.html.request, jaskell.html.request.json], function write(_
 //---------------------------------------------------------------------------
 // Samples & Tests ------------------------------------------------------------
 
+var assertion1 = null
+var assertion2 = null
 jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
     var append123 = null
@@ -656,7 +664,7 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
                 _.select.byClass('test5'),
                 _.append(' select in the middle of a sequence'),
                 _.event.capture('click', () => _.event.trigger('test', document.body))
-            )
+            )() // TODO: immediately invoked sequence (like compose and nest)
         }),
         _.test.case(function captureTestEvent() {
             _.event.capture('test', evt => console.log(evt.detail), document.body)
@@ -675,7 +683,7 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
                         _.style.animate.ease('color', '#000', '#fff', 3000),
                         _.style.reset('color', 'transition') )
                 ))
-            )
+            )() // TODO: immediately invoked sequence (like compose and nest)
         }),
         _.test.case(_.sequence(
             ((a,b) => () => () => a + b)(10,20),
@@ -778,5 +786,24 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
             console.log('done')
         })
+    )
+
+    assertion1 = _.test.case.curry(_.assert.equal.curry([1,2,3,4,5,6,7,8,9,10]))
+    assertion2 = _.test.case.curry(_.assert.equal.curry([0,2,4,6,8,10]))
+    _.test.suite('Range',
+        assertion1(_.range(1,1,10)),
+        assertion1(_.range(1,10)),
+        assertion1(_.range('1..10')),
+        assertion1(_.range('1,2..10')),
+        assertion2(_.range(0,2,10)),
+        assertion2(_.range('0,2..10')),
+        assertion2(_.range('0..8,10')),
+        assertion2(_.range('..8,10')),
+        assertion1(_.range(1,1,'..').take(10)),
+        assertion1(_.range(1,'..').take(10)),
+        assertion1(_.range('1..').take(10)),
+        assertion1(_.range('1,2..').take(10)),
+        assertion2(_.range(0,2,'..').take(6)),
+        assertion2(_.range('0,2..').take(6))
     )
 })
