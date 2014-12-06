@@ -6,12 +6,10 @@
 
 var jaskell = new function () {
 
-    Function.prototype.curry = function () {
+    Function.prototype.curry = function (...args) {
         var f = this
-        var a = _.toArray(arguments)
-        return function curried() {
-            return f.apply(this, a.concat(_.toArray(arguments)))
-        }
+        var a = args
+        return (...args) => f.apply(this, a.concat(args))
     }
 
     var _ = {}
@@ -22,10 +20,6 @@ var jaskell = new function () {
 
     _.isArray = function (obj) {
         return Object.prototype.toString.call(obj) === '[object Array]'
-    }
-
-    _.toArray = function (args) {
-        return Array.prototype.slice.call(args)
     }
 
     _.each = function (objs, fn) {
@@ -591,6 +585,19 @@ jaskell.debug = new function () {
     _.assert.contains = function (set, value) {}
     _.assert.empty = function (object) {}
 
+    _.timeIt = function(fn) {
+        return function(...args) {
+            var start = new Date().getTime()
+            console.log('Started at: ' + start)
+            var result = fn.apply(this, args)
+            var end = new Date().getTime()
+            console.log('Ended at: ' + end)
+            var total = end - start
+            console.log(fn.name + ' time taken: ' + total)
+            return result
+        }
+    }
+
     return _
 }
 
@@ -629,7 +636,7 @@ var assertion2 = null
 jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
     var append123 = null
-    _.test.suite('Main',
+    _.timeIt(_.test.suite.curry('Main',
         _.test.case(function createCustomEvent() {
             let i = 0
             _.event.create('test', true, true, function () {
@@ -786,7 +793,7 @@ jaskell.mixin(jaskell, jaskell.html, jaskell.debug, function main(_) {
 
             console.log('done')
         })
-    )
+    ))()
 
     assertion1 = _.test.case.curry(_.assert.equal.curry([1,2,3,4,5,6,7,8,9,10]))
     assertion2 = _.test.case.curry(_.assert.equal.curry([0,2,4,6,8,10]))
