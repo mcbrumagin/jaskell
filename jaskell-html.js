@@ -292,6 +292,20 @@ jaskell.html = new function () {
             }
             return doEachIfElem(elem, append)
         },
+        template: {
+            list: {},
+            add: function (name, text) {
+                if (_.template.list[name]) console.warn(`Overwriting template ${name}`)
+                if (text.outerHTML) text = text.outerHTML
+                _.template.list[name] = text
+            },
+            render: function (name, ...params) {
+                if (!_.template.list[name]) throw new Error(`Could not find a template by name: ${name}`)
+                return _.template.list[name].replace(/{\d}/g, function (matched) {
+                    return params[matched.replace(/{|}/g,'')]
+                })
+            }
+        },
         classes: {
             add: function (...args /* ...vals, elem */) {
                 var ind = args.length - 1
