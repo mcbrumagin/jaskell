@@ -301,7 +301,7 @@ jaskell.html = new function () {
             },
             render: function (name, ...params) {
                 if (!_.template.list[name]) throw new Error(`Could not find a template by name: ${name}`)
-                return _.template.list[name].replace(/{\d}/g, function (matched) {
+                return _.template.list[name].replace(/{\d*}/g, function (matched) {
                     return params[matched.replace(/{|}/g,'')]
                 })
             }
